@@ -420,7 +420,7 @@ export default class InitiativeTracker extends Plugin {
                         this.app.metadataCache.getFileCache(file)?.frontmatter;
                     if (!frontmatter) return;
                     for (let player of players) {
-                        const { ac, hp, modifier, level, name } = frontmatter;
+                        const { ac, hp, modifier, level, name, image, image_url } = frontmatter;
                         player.ac = ac;
                         player.hp = hp;
                         player.modifier = modifier;
@@ -428,6 +428,8 @@ export default class InitiativeTracker extends Plugin {
                         player.name = name ? name : player.name;
                         player["statblock-link"] =
                             frontmatter["statblock-link"];
+                        player.image = image;
+                        player.image_url = image_url;
 
                         this.playerCreatures.set(
                             player.name,
@@ -609,6 +611,14 @@ export default class InitiativeTracker extends Plugin {
                 }
             )
         );
+        this.registerEvent(
+            this.app.workspace.on(
+                "initiative-tracker:stop-viewing",
+                () => {
+                    tracker.setViewingCreature(null);
+                }
+            )
+        );
     }
 
     async onunload() {
@@ -726,6 +736,7 @@ export default class InitiativeTracker extends Plugin {
 
         await this.combatant.render(creature);
         this.app.workspace.revealLeaf(this.combatant.leaf);
+        tracker.setViewingCreature(creature);
     }
     private _builderIcon: HTMLElement;
     setBuilderIcon() {

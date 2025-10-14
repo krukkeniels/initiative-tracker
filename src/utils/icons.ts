@@ -1,7 +1,12 @@
 import { addIcon } from "obsidian";
+import { CONDITION_ICONS } from "./condition-icons";
 
 export const RANDOM_HP = "RANDOM_HP";
 export function registerIcons() {
+    // Register condition icons
+    Object.entries(CONDITION_ICONS).forEach(([name, svg]) => {
+        addIcon(`condition-${name}`, svg);
+    });
     addIcon(
         RANDOM_HP,
         `<svg fill="currentColor" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"

@@ -24,6 +24,7 @@ import {
     OVERFLOW_TYPE,
     RESOLVE_TIES
 } from "../utils";
+import { getAvailableConditionIcons } from "../utils/condition-icons";
 import { RpgSystemSetting, getRpgSystem } from "../utils/rpg-system";
 import type { Party } from "./settings.types";
 import type { InputValidate } from "./settings.types";
@@ -1325,7 +1326,8 @@ class StatusModal extends Modal {
             this.status = {
                 name: status.name,
                 description: status.description,
-                id: status.id ?? getId()
+                id: status.id ?? getId(),
+                icon: status.icon
             };
         }
     }
@@ -1371,6 +1373,20 @@ class StatusModal extends Modal {
                 (v) => (this.status.description = v)
             );
         });
+        new Setting(this.contentEl)
+            .setName("Icon")
+            .setDesc("Select an icon to represent this condition.")
+            .addDropdown((d) => {
+                d.addOption("", "None");
+                const availableIcons = getAvailableConditionIcons();
+                for (const iconName of availableIcons) {
+                    d.addOption(iconName, iconName.charAt(0).toUpperCase() + iconName.slice(1));
+                }
+                d.setValue(this.status.icon ?? "");
+                d.onChange((v) => {
+                    this.status.icon = v || undefined;
+                });
+            });
         new Setting(this.contentEl)
             .setName("Remove Each Round")
             .setDesc(

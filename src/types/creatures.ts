@@ -11,6 +11,8 @@ export interface CreatureState extends HomebrewCreature {
     xp: number;
     active: boolean;
     hit_dice: string;
+    image?: string;
+    image_url?: string;
 }
 export interface SRDMonster {
     name: string;
@@ -48,11 +50,14 @@ export interface HomebrewCreature {
     static?: boolean;
     rollHP?: boolean;
     "statblock-link"?: string;
+    image?: string;
+    image_url?: string;
 }
 export type Condition = {
     name: string;
     description: string;
     id: string;
+    icon?: string;
     resetOnRound?: boolean;
     hasAmount?: boolean;
     startingAmount?: number;

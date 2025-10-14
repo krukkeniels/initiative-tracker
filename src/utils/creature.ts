@@ -47,6 +47,8 @@ export class Creature {
     "statblock-link": string;
     cr: string | number;
     path: string;
+    image: string;
+    image_url: string;
     setModifier(modifier: number[] | number) {
         if (modifier) {
             if (Array.isArray(modifier)) {
@@ -104,6 +106,15 @@ export class Creature {
 
         this.cr = creature.cr;
         this.id = creature.id ?? getId();
+
+        // Store image properties if available
+        if ("image" in creature) {
+            this.image = (creature as any).image;
+        }
+        if ("image_url" in creature) {
+            this.image_url = (creature as any).image_url;
+        }
+
         if ("statblock-link" in creature) {
             this["statblock-link"] = (creature as any)[
                 "statblock-link"
@@ -209,6 +220,14 @@ export class Creature {
 
         this.marker = creature.marker;
         this.source = creature.source;
+
+        // Update image properties if available
+        if ("image" in creature) {
+            this.image = (creature as any).image;
+        }
+        if ("image_url" in creature) {
+            this.image_url = (creature as any).image_url;
+        }
     }
 
     toProperties() {
@@ -243,7 +262,9 @@ export class Creature {
             friendly: this.friendly,
             "statblock-link": this["statblock-link"],
             hit_dice: this.hit_dice,
-            rollHP: this.rollHP
+            rollHP: this.rollHP,
+            image: this.image,
+            image_url: this.image_url
         };
     }
 
@@ -278,6 +299,15 @@ export class Creature {
         }
         creature.status = new Set(statuses);
         creature.active = state.active;
+
+        // Restore image properties from saved state
+        if (state.image) {
+            creature.image = state.image;
+        }
+        if (state.image_url) {
+            creature.image_url = state.image_url;
+        }
+
         return creature;
     }
 }

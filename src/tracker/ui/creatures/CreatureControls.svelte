@@ -27,14 +27,6 @@
         hamburger.extraSettingsEl.onclick = (evt) => {
             evt.stopPropagation();
             const menu = new Menu();
-            menu.addItem((item) => {
-                item.setIcon(HP)
-                    .setTitle("Set Health/Status")
-                    .onClick((e: MouseEvent) => {
-                        tracker.updateTarget.set("hp");
-                        tracker.setUpdate(creature, e);
-                    });
-            });
             if (creature.current_ac != creature.ac) {
                 menu.addItem((item) => {
                     item.setIcon(HP)
@@ -46,10 +38,17 @@
                 });
             }
             menu.addItem((item) => {
-                item.setIcon("pencil")
-                    .setTitle("Edit")
+                item.setIcon("arrow-up")
+                    .setTitle("Move Up")
                     .onClick(() => {
-                        dispatch("edit", creature);
+                        tracker.moveUp(creature);
+                    });
+            });
+            menu.addItem((item) => {
+                item.setIcon("arrow-down")
+                    .setTitle("Move Down")
+                    .onClick(() => {
+                        tracker.moveDown(creature);
                     });
             });
             if (creature.hidden) {

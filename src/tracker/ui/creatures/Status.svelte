@@ -2,7 +2,7 @@
     import { ExtraButtonComponent, setIcon } from "obsidian";
     import type { Condition } from "src/types/creatures";
     import { createEventDispatcher } from "svelte";
-    
+
     const dispatch = createEventDispatcher();
 
     export let status: Condition;
@@ -18,10 +18,18 @@
     const plus = (node: HTMLElement) => {
         setIcon(node, "plus");
     };
+    const conditionIcon = (node: HTMLElement) => {
+        if (status.icon) {
+            setIcon(node, `condition-${status.icon}`);
+        }
+    };
 </script>
 
 <!-- svelte-ignore a11y-unknown-aria-attribute -->
 <div class="tag">
+    {#if status.icon}
+        <div class="condition-icon" use:conditionIcon />
+    {/if}
     <span
         aria-label-classes="initiative-tracker-condition-tooltip"
         aria-label={status.description?.length ? status.description : null}
@@ -61,8 +69,14 @@
     .tag :global(.clickable-icon) {
         margin: 0;
     }
-    .icon {
+    .icon,
+    .condition-icon {
         display: flex;
         align-items: center;
+        flex-shrink: 0;
+    }
+    .condition-icon {
+        width: 1em;
+        height: 1em;
     }
 </style>

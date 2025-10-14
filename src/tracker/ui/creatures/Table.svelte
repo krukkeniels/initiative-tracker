@@ -3,11 +3,9 @@
 
     import CreatureTemplate from "./Creature.svelte";
 
-    import { AC, DICE, HP, META_MODIFIER } from "src/utils";
+    import { DICE, HP, META_MODIFIER } from "src/utils";
     import { Creature, getId } from "src/utils/creature";
     import { createEventDispatcher } from "svelte";
-    import { dndzone } from "svelte-dnd-action";
-    import { flip } from "svelte/animate";
 
     import { tracker } from "../../stores/tracker";
     import type InitiativeTracker from "src/main";
@@ -16,49 +14,11 @@
     const plugin = getContext<InitiativeTracker>("plugin");
     const { state, ordered } = tracker;
 
-    $: items = [...$ordered].map((c) => {
-        return { creature: c, id: getId() };
-    });
-
     const dispatch = createEventDispatcher();
 
     const hpIcon = (node: HTMLElement) => {
         setIcon(node, HP);
     };
-    const acIcon = (node: HTMLElement) => {
-        setIcon(node, AC);
-    };
-    const flipDurationMs = 300;
-    function handleDndConsider(
-        e: CustomEvent<GenericDndEvent<{ creature: Creature; id: string }[]>>
-    ) {
-        items = e.detail.items;
-    }
-    function handleDndFinalize(
-        e: CustomEvent<GenericDndEvent<{ creature: Creature; id: string }[]>>
-    ) {
-        if (e.detail.items.length > 1) {
-            let dropped = e.detail.items.find(
-                ({ id }) => id == e.detail.info.id
-            );
-            const index = e.detail.items.findIndex(
-                (c) => c.id == e.detail.info.id
-            );
-            if (index == e.detail.items.length - 1) {
-                dropped.creature.initiative =
-                    e.detail.items[index - 1].creature.initiative;
-            } else {
-                dropped.creature.initiative =
-                    e.detail.items[index + 1].creature.initiative;
-            }
-            tracker.logNewInitiative(dropped.creature);
-        }
-        items = e.detail.items;
-        $tracker = [...items.map(({ creature }, i) => {
-            creature.manualOrder = i;
-            return creature;
-        })];
-    }
 
     const diceIcon = (node: HTMLElement) => {
         new ExtraButtonComponent(node).setIcon(DICE);
@@ -69,34 +29,23 @@
     {#if $ordered.length}
         <thead class="tracker-table-header">
             <td
-                style="width: 10%;"
+                style="width: 60px;"
                 use:diceIcon
                 aria-label="Re-Roll Initiatives"
                 on:click={(evt) => tracker.roll(plugin)}
             />
-            <th class="left" style="width:55%">Name</th>
-            <th style="width:15%" use:hpIcon class="center" />
-            <th style="width:15%" use:acIcon class="center" />
-            <th style="width:5%" />
+            <th class="left">Name</th>
+            <th style="width: 120px;" use:hpIcon class="center" />
+            <th style="width: 100px;" />
         </thead>
-        <tbody
-            use:dndzone={{
-                items,
-                flipDurationMs,
-                dropTargetStyle: {},
-                morphDisabled: true
-            }}
-            on:consider={handleDndConsider}
-            on:finalize={handleDndFinalize}
-        >
-            {#each items as { creature, id } (id)}
+        <tbody>
+            {#each $ordered as creature (creature.id)}
                 <tr
-                    class="draggable initiative-tracker-creature"
+                    class="initiative-tracker-creature"
                     class:disabled={!creature.enabled}
                     class:active={$state && creature.active}
                     class:viewing={creature.viewing}
                     class:friendly={creature.friendly}
-                    animate:flip={{ duration: flipDurationMs }}
                     data-hp={creature.hp}
                     data-hp-max={creature.current_max}
                     data-hp-percent={Math.round(
@@ -136,7 +85,7 @@
         gap: 0.25rem 0.5rem;
         width: 100%;
         margin-left: 0rem;
-        table-layout: fixed;
+        table-layout: auto;
         border-collapse: separate;
         border-spacing: 0 2px;
     }
@@ -179,6 +128,7 @@
     .initiative-tracker-creature.viewing :global(td) {
         border-top: 1px solid var(--background-modifier-border);
         border-bottom: 1px solid var(--background-modifier-border);
+        background-color: color-mix(in srgb, var(--background-modifier-border) 8%, transparent);
     }
     .initiative-tracker-creature:hover :global(td:first-child),
     .initiative-tracker-creature.viewing :global(td:first-child) {

@@ -6,6 +6,7 @@
     import { getContext } from "svelte";
     import { getId } from "src/utils/creature";
     import Status from "src/tracker/ui/creatures/Status.svelte";
+    import ConditionSelector from "src/tracker/ui/creatures/ConditionSelector.svelte";
 
     import { tracker } from "../stores/tracker";
     const { updating, updateTarget } = tracker;
@@ -22,10 +23,6 @@
     const tagIcon = (node: HTMLElement) => {
         setIcon(node, TAG);
     };
-    let statusBtn: ExtraButtonComponent;
-    const addStatusIcon = (node: HTMLElement) => {
-        statusBtn = new ExtraButtonComponent(node).setIcon("plus-circle");
-    };
     const removeIcon = (node: HTMLElement) => {
         setIcon(node, REMOVE);
     };
@@ -37,57 +34,10 @@
     };
     let damage: string = "";
     let ac: string = "";
-    let status: string = null;
-    $: {
-        if (statusBtn) statusBtn.setDisabled(!status);
-    }
     const statuses = writable<Condition[]>([]);
-    const addStatus = () => {
-        if (status) {
-            $statuses = [
-                ...$statuses,
-                {
-                    ...(plugin.data.statuses.find((s) => s.name == status) ?? {
-                        name: status,
-                        id: getId(),
-                        description: ""
-                    })
-                }
-            ];
-            status = null;
-            modal.items = plugin.data.statuses
-                .filter((s) => !$statuses.find((a) => a.id == s.id))
-                .map((s) => s.name);
-            conditionText.setValue("");
-        }
-    };
 
-    let modal: ConditionSuggestionModal;
-    let conditionText: TextComponent;
-    const conditionDiv = (node: HTMLElement) => {
-        conditionText = new TextComponent(node);
-        conditionText.onChange((v) => (status = v));
-        node.onkeydown = (evt) => {
-            if (evt.key === "Enter") {
-                status ? addStatus() : performUpdate(true);
-        }};
-        createModal();
-    };
-    const createModal = () => {
-        modal = new ConditionSuggestionModal(
-            plugin.app,
-            conditionText,
-            plugin.data.statuses
-                .filter((s) => !$statuses.find((a) => a.id == s.id))
-                .map((s) => s.name)
-        );
-        modal.onSelect(async ({ item }) => {
-            status = item;
-            conditionText.setValue(item);
-
-            modal.close();
-            addStatus();
-        });
+    const addStatus = (condition: Condition) => {
+        $statuses = [...$statuses, { ...condition }];
     };
     function init(el: HTMLInputElement, target: "hp" | "ac") {
         if ($updateTarget == target) el.focus();
@@ -100,10 +50,8 @@
         }
 
         damage = null;
-        status = null;
         ac = null;
         $statuses = [];
-        modal = null;
 
         $updateTarget = null;
 
@@ -166,14 +114,11 @@
                                 aria-label="Apply status effect to creatures that fail their saving throw"
                                 style="margin: 0 0.2rem 0 0.7rem"
                             />
-                            <div use:conditionDiv />
+                            <ConditionSelector
+                                excludeConditions={$statuses}
+                                on:select={(e) => addStatus(e.detail)}
+                            />
                         </div>
-                        <div
-                            use:addStatusIcon
-                            aria-label="Add Status"
-                            on:click={addStatus}
-                            style="margin: 0rem 0.2rem 0rem 0rem"
-                        />
                     </div>
                     {#if $statuses.length}
                         <div class="status-list">
@@ -214,10 +159,6 @@
                     <input
                         type="text"
                         bind:value={ac}
-                        on:focus={function () {
-                            // Resolves bug caused by condition select modal not closing
-                            modal = null;
-                        }}
                         on:keydown={function (evt) {
                             if (evt.key == "Tab") {
                                 return true;
@@ -299,7 +240,6 @@
                                 tracker.setUpdate(creature, evt);
                                 if (!$updating.size) {
                                     $statuses = [];
-                                    modal = null;
                                 }
                             }}
                             style="cursor:pointer"

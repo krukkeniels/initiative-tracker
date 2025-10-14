@@ -1,15 +1,19 @@
 <script lang="ts">
-    import { DEFAULT_UNDEFINED, FRIENDLY, HIDDEN } from "src/utils";
+    import { DEFAULT_UNDEFINED, FRIENDLY, HIDDEN, HP } from "src/utils";
     import type { Creature } from "src/utils/creature";
     import Initiative from "./Initiative.svelte";
     import CreatureControls from "./CreatureControls.svelte";
     import Status from "./Status.svelte";
-    import { Platform, setIcon } from "obsidian";
+    import ConditionSelector from "./ConditionSelector.svelte";
+    import { Platform, setIcon, ExtraButtonComponent } from "obsidian";
     import { tracker } from "../../stores/tracker";
-    import { createEventDispatcher } from "svelte";
+    import { createEventDispatcher, getContext } from "svelte";
+    import type { Condition } from "src/types/creatures";
+    import type InitiativeTracker from "src/main";
 
     const dispatch = createEventDispatcher();
-    const { updateTarget } = tracker;
+    const { updateTarget, updating, viewingCreature } = tracker;
+    const plugin = getContext<InitiativeTracker>("plugin");
 
     export let creature: Creature;
     $: statuses = creature.status;
@@ -49,6 +53,38 @@
 
     const cancelHover = (evt: MouseEvent) => {
         clearTimeout(hoverTimeout);
+    };
+
+    const hpIconFn = (node: HTMLElement) => {
+        setIcon(node, HP);
+    };
+
+    const editIcon = (node: HTMLElement) => {
+        const button = new ExtraButtonComponent(node)
+            .setIcon("pencil")
+            .setTooltip("Edit");
+        button.extraSettingsEl.onclick = (evt) => {
+            evt.stopPropagation();
+            dispatch("edit", creature);
+        };
+    };
+
+    const statblockIcon = (node: HTMLElement) => {
+        const button = new ExtraButtonComponent(node)
+            .setIcon("book-open")
+            .setTooltip("Open Statblock");
+        button.extraSettingsEl.onclick = (evt) => {
+            evt.stopPropagation();
+            plugin.openCombatant(creature);
+        };
+    };
+
+    const handleConditionSelect = (e: CustomEvent<Condition>) => {
+        const condition = e.detail;
+        tracker.updateCreatures({
+            creature,
+            change: { status: [condition] }
+        });
     };
 </script>
 
@@ -103,50 +139,42 @@
                 />
             {/each}
         {/if}
+        <ConditionSelector
+            compact={true}
+            excludeConditions={[...statuses]}
+            on:select={handleConditionSelect}
+        />
     </div>
 </td>
 
 <td
-    class="center hp-container creature-adder"
+    class="hp-container creature-adder"
     class:mobile={Platform.isMobile}
     on:click|stopPropagation={(evt) => {
-        const prev = $updateTarget;
         $updateTarget = "hp";
-        if (prev == "ac") return;
         tracker.setUpdate(creature, evt);
     }}
 >
-    <div>
-        {@html creature.hpDisplay}
-    </div>
-</td>
-
-<td
-    class="center ac-container creature-adder"
-    class:mobile={Platform.isMobile}
-    on:click|stopPropagation={(evt) => {
-        const prev = $updateTarget;
-        $updateTarget = "ac";
-        if (prev == "hp") return;
-        tracker.setUpdate(creature, evt);
-    }}
->
-    <div
-        class:dirty-ac={creature.current_ac != creature.ac}
-        aria-label={creature.current_ac != creature.ac ? `${creature.ac}` : ""}
-    >
-        {creature.current_ac ? creature.current_ac : DEFAULT_UNDEFINED}
+    <div class="hp-content" class:selected={$updating.has(creature)}>
+        <div class="hp-icon" use:hpIconFn />
+        <div class="hp-display">
+            {@html creature.hpDisplay}
+        </div>
     </div>
 </td>
 
 <td class="controls-container">
-    <CreatureControls
-        on:click={(e) => e.stopPropagation()}
-        on:tag
-        on:edit
-        on:hp
-        {creature}
-    />
+    <div class="controls-row">
+        <div class="icon statblock-icon" class:selected={$viewingCreature === creature} use:statblockIcon />
+        <div class="icon" use:editIcon />
+        <CreatureControls
+            on:click={(e) => e.stopPropagation()}
+            on:tag
+            on:edit
+            on:hp
+            {creature}
+        />
+    </div>
 </td>
 
 <style scoped>
@@ -155,10 +183,13 @@
         align-items: center;
         gap: 0.25rem;
         font-size: small;
+        overflow: hidden;
+        min-width: 0;
     }
     .centered-icon {
         display: flex;
         align-items: center;
+        flex-shrink: 0;
     }
     .name {
         display: block;
@@ -167,13 +198,48 @@
         border: 0;
         padding: 0;
         height: unset;
-        word-break: keep-all;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
     .center {
         text-align: center;
     }
     .creature-adder {
         cursor: pointer;
+    }
+    .hp-container {
+        padding: 0.25rem 0.5rem;
+    }
+    .hp-content {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--background-modifier-border);
+        border-radius: 4px;
+        background-color: var(--interactive-normal);
+        transition: background-color 0.1s ease;
+    }
+    .hp-content:hover {
+        background-color: var(--interactive-hover);
+    }
+    .hp-content:active {
+        background-color: var(--interactive-accent);
+    }
+    .hp-content.selected {
+        background-color: var(--interactive-accent);
+        border-color: var(--interactive-accent);
+        color: var(--text-on-accent);
+    }
+    .hp-icon {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+    }
+    .hp-display {
+        flex: 1;
     }
 
     .statuses {
@@ -190,8 +256,18 @@
         border-top-right-radius: 0.25rem;
         border-bottom-right-radius: 0.25rem;
     }
-    .dirty-ac {
-        font-weight: var(--font-bold);
+    .controls-row {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    .icon :global(.clickable-icon) {
+        margin-right: 0;
+    }
+    .statblock-icon.selected :global(.clickable-icon) {
+        background-color: var(--interactive-accent);
+        color: var(--text-on-accent);
+        border-radius: 4px;
     }
     .mobile {
         font-size: smaller;

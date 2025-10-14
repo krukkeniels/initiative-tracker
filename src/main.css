@@ -290,3 +290,12 @@ body {
         transform: /* scale(1) */ rotate(660deg);
     }
 }
+
+/* Player View - Remove padding to go edge to edge */
+.workspace-leaf-content[data-type="initiative-tracker-player-view"] .view-content {
+    padding: 0;
+}
+
+.workspace-leaf-content[data-type="initiative-tracker-player-view"] {
+    padding: 0;
+}

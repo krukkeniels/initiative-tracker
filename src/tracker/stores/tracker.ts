@@ -54,6 +54,7 @@ function createTracker() {
     const creatures = writable<Creature[]>([]);
     const updating = writable<Map<Creature, HPUpdate>>(new Map());
     const updateTarget = writable<"ac" | "hp">();
+    const viewingCreature = writable<Creature | null>(null);
     const { subscribe, set, update } = creatures;
 
     const $logFile = writable<TFile | null>();
@@ -954,7 +955,63 @@ function createTracker() {
                     thresholds: rpgSystem.getDifficultyThresholds(players),
                     labels: rpgSystem.systemDifficulties
                 };
-            })
+            }),
+
+        moveUp: (creature: Creature) => {
+            updateAndSave((creatures) => {
+                const currentIndex = current_order.indexOf(creature);
+                if (currentIndex <= 0) return creatures; // Already at the top or not found
+
+                const prevCreature = current_order[currentIndex - 1];
+
+                // Set initiative to match the previous creature (create a tie)
+                creature.initiative = prevCreature.initiative;
+                logNewInitiative(creature);
+
+                // Swap positions in the ordered array
+                [current_order[currentIndex - 1], current_order[currentIndex]] =
+                [current_order[currentIndex], current_order[currentIndex - 1]];
+
+                // Reassign manualOrder to ALL creatures based on new positions
+                current_order.forEach((c, i) => {
+                    c.manualOrder = i;
+                });
+
+                // Return new array reference to trigger reactivity
+                return [...creatures];
+            });
+        },
+
+        moveDown: (creature: Creature) => {
+            updateAndSave((creatures) => {
+                const currentIndex = current_order.indexOf(creature);
+                if (currentIndex === -1 || currentIndex >= current_order.length - 1) return creatures; // Already at bottom or not found
+
+                const nextCreature = current_order[currentIndex + 1];
+
+                // Set initiative to match the next creature (create a tie)
+                creature.initiative = nextCreature.initiative;
+                logNewInitiative(creature);
+
+                // Swap positions in the ordered array
+                [current_order[currentIndex], current_order[currentIndex + 1]] =
+                [current_order[currentIndex + 1], current_order[currentIndex]];
+
+                // Reassign manualOrder to ALL creatures based on new positions
+                current_order.forEach((c, i) => {
+                    c.manualOrder = i;
+                });
+
+                // Return new array reference to trigger reactivity
+                return [...creatures];
+            });
+        },
+
+        viewingCreature,
+        setViewingCreature: (creature: Creature | null) => {
+            viewingCreature.set(creature);
+        },
+        getViewingCreature: () => get(viewingCreature)
     };
 }
 
