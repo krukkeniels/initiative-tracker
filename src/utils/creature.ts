@@ -203,23 +203,60 @@ export class Creature {
         });
     }
 
-    update(creature: HomebrewCreature) {
-        this.name = creature.name;
+    update(creature: Partial<HomebrewCreature>) {
+        // Selectively update only provided properties
+        if ("name" in creature && creature.name !== undefined) {
+            this.name = creature.name;
+        }
 
-        this.setModifier(creature.modifier);
+        if ("modifier" in creature && creature.modifier !== undefined) {
+            this.setModifier(creature.modifier);
+        }
 
-        this.current_max = this.max = creature.hp ? Number(creature.hp) : 0;
+        if ("hp" in creature && creature.hp !== undefined) {
+            this.current_max = this.max = creature.hp ? Number(creature.hp) : 0;
+            if (this.hp > this.max) this.hp = this.max;
+        }
 
-        if (this.hp > this.max) this.hp = this.max;
+        if ("ac" in creature && creature.ac !== undefined) {
+            this.current_ac = this.ac = creature.ac;
+        }
 
-        this.current_ac = this.ac = creature.ac ?? undefined;
-        this.note = creature.note;
-        this.level = creature.level;
-        this.player = creature.player;
-        this["statblock-link"] = creature["statblock-link"];
+        if ("note" in creature && creature.note !== undefined) {
+            this.note = creature.note;
+        }
 
-        this.marker = creature.marker;
-        this.source = creature.source;
+        if ("level" in creature && creature.level !== undefined) {
+            this.level = creature.level;
+        }
+
+        if ("player" in creature && creature.player !== undefined) {
+            this.player = creature.player;
+        }
+
+        if ("statblock-link" in creature) {
+            this["statblock-link"] = creature["statblock-link"];
+        }
+
+        if ("marker" in creature && creature.marker !== undefined) {
+            this.marker = creature.marker;
+        }
+
+        if ("source" in creature && creature.source !== undefined) {
+            this.source = creature.source;
+        }
+
+        if ("cr" in creature && creature.cr !== undefined) {
+            this.cr = creature.cr;
+        }
+
+        if ("xp" in creature && creature.xp !== undefined) {
+            this.xp = creature.xp;
+        }
+
+        if ("hit_dice" in creature && creature.hit_dice !== undefined && typeof creature.hit_dice === "string") {
+            this.hit_dice = creature.hit_dice;
+        }
 
         // Update image properties if available
         if ("image" in creature) {
@@ -227,6 +264,14 @@ export class Creature {
         }
         if ("image_url" in creature) {
             this.image_url = (creature as any).image_url;
+        }
+
+        // Allow direct updates of combat-related properties (for internal use)
+        if ("current_max" in creature && (creature as any).current_max !== undefined) {
+            this.current_max = (creature as any).current_max;
+        }
+        if ("current_ac" in creature && (creature as any).current_ac !== undefined) {
+            this.current_ac = (creature as any).current_ac;
         }
     }
 

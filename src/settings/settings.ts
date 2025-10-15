@@ -4,6 +4,7 @@ import {
     normalizePath,
     Notice,
     PluginSettingTab,
+    requestUrl,
     setIcon,
     Setting,
     TextComponent,
@@ -1043,6 +1044,154 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
                     tracker.roll(this.plugin);
                     await this.plugin.saveSettings();
                 };
+            });
+
+        // OpenAI Image Generation Section
+        containerEl.createEl("h3", { text: "AI Image Generation"});
+        containerEl.createDiv("initiative-tracker-explanation").createSpan({
+            text: "Generate thematic background images for the Player View using OpenAI's DALL-E. Images are based on current monsters, their health status, and optional scene descriptions."
+        });
+
+        new Setting(containerEl)
+            .setName("OpenAI API Key")
+            .setDesc(
+                createFragment((e) => {
+                    e.createSpan({
+                        text: "Your OpenAI API key for DALL-E image generation. "
+                    });
+                    e.createEl("a", {
+                        text: "Get your API key here",
+                        href: "https://platform.openai.com/api-keys"
+                    });
+                    e.createSpan({ text: ". (~$0.04-0.08 per image)" });
+                })
+            )
+            .addText((t) => {
+                t.setPlaceholder("sk-...");
+                t.setValue(this.plugin.data.openaiApiKey || "");
+                t.onChange((v) => {
+                    this.plugin.data.openaiApiKey = v;
+                });
+                t.inputEl.type = "password";
+                t.inputEl.onblur = async () => {
+                    await this.plugin.saveSettings();
+                };
+            })
+            .addExtraButton((b) =>
+                b
+                    .setIcon("check-circle")
+                    .setTooltip("Test API Key")
+                    .onClick(async () => {
+                        if (!this.plugin.data.openaiApiKey || this.plugin.data.openaiApiKey.trim() === "") {
+                            new Notice("Please enter an API key first");
+                            return;
+                        }
+
+                        const { OpenAIImageService } = await import("../utils/openai-service");
+                        const service = new OpenAIImageService(this.plugin.data.openaiApiKey, requestUrl);
+
+                        new Notice("Testing API key...");
+                        const result = await service.testApiKey();
+
+                        if (result.valid) {
+                            new Notice("✓ API key is valid!");
+                        } else {
+                            new Notice(`✗ API key test failed: ${result.error}`);
+                        }
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName("Default Image Style")
+            .setDesc("The artistic style to use for generated images")
+            .addDropdown((d) => {
+                d.addOption("realistic", "Realistic");
+                d.addOption("fantasy-art", "Fantasy Art");
+                d.addOption("comic-book", "Comic Book");
+                d.addOption("watercolor", "Watercolor");
+                d.addOption("oil-painting", "Oil Painting");
+                d.addOption("digital-art", "Digital Art");
+                d.addOption("anime", "Anime");
+                d.addOption("cinematic", "Cinematic");
+                d.setValue(this.plugin.data.imageStyle || "fantasy-art");
+                d.onChange(async (v) => {
+                    this.plugin.data.imageStyle = v;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        new Setting(containerEl)
+            .setName("Default Grimness Level")
+            .setDesc(
+                createFragment((e) => {
+                    e.createSpan({
+                        text: "Controls the mood and danger level of generated images. "
+                    });
+                    e.createEl("br");
+                    e.createSpan({
+                        text: "Low (0-33): Bright, hopeful atmosphere"
+                    });
+                    e.createEl("br");
+                    e.createSpan({
+                        text: "Medium (34-66): Dramatic, tense atmosphere"
+                    });
+                    e.createEl("br");
+                    e.createSpan({
+                        text: "High (67-100): Dark, desperate atmosphere"
+                    });
+                })
+            )
+            .addSlider((s) => {
+                s.setLimits(0, 100, 5);
+                s.setValue(this.plugin.data.imageGrimness ?? 50);
+                s.setDynamicTooltip();
+                s.onChange(async (v) => {
+                    this.plugin.data.imageGrimness = v;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        const bgFolderExists = await this.plugin.app.vault.adapter.exists(
+            this.plugin.data.backgroundImagesFolder
+        );
+        new Setting(containerEl)
+            .setName("Background Images Folder")
+            .setDesc(
+                createFragment(async (e) => {
+                    e.createSpan({
+                        text: "Generated background images will be saved to this folder."
+                    });
+                    e.createEl("br");
+                    e.createSpan({ text: "Current: " });
+                    e.createEl("code", { text: this.plugin.data.backgroundImagesFolder });
+
+                    if (!bgFolderExists) {
+                        e.createEl("br");
+                        const container = e.createDiv(
+                            "initiative-tracker-warning"
+                        );
+                        setIcon(container, "initiative-tracker-warning");
+                        container.createSpan({
+                            text: "This folder does not exist and will be created when the first background is saved."
+                        });
+                    }
+                })
+            )
+            .addText((t) => {
+                t.setValue(this.plugin.data.backgroundImagesFolder);
+                let folders = this.app.vault
+                    .getAllLoadedFiles()
+                    .filter((f) => f instanceof TFolder);
+                const modal = new FolderInputSuggest(
+                    this.app,
+                    t,
+                    folders as TFolder[]
+                );
+                modal.onSelect(async ({ item }) => {
+                    this.plugin.data.backgroundImagesFolder = normalizePath(item.path);
+                    await this.plugin.saveSettings();
+                    this.display();
+                });
             });
     }
 }

@@ -478,6 +478,15 @@ export default class InitiativeTracker extends Plugin {
                     }
                 })
             );
+
+            // Listen for Fantasy Statblocks bestiary updates
+            if (this.canUseStatBlocks) {
+                this.registerEvent(
+                    this.app.workspace.on("fantasy-statblocks:bestiary:updated", () => {
+                        this.updateCreaturesFromBestiary();
+                    })
+                );
+            }
         });
 
         console.log("Initiative Tracker v" + this.manifest.version + " loaded");
@@ -750,6 +759,99 @@ export default class InitiativeTracker extends Plugin {
             );
         } else {
             this._builderIcon?.detach();
+        }
+    }
+
+    /**
+     * Update creatures in the active encounter when their statblocks change in Fantasy Statblocks.
+     * This preserves combat state (HP, conditions, initiative) while updating statblock properties.
+     */
+    updateCreaturesFromBestiary() {
+        if (!this.canUseStatBlocks) return;
+        if (!this.view) return; // No active tracker view
+
+        const creatures = tracker.getOrderedCreatures();
+        if (!creatures.length) return;
+
+        let updatedCount = 0;
+
+        for (const creature of creatures) {
+            // Skip players - they're managed separately via frontmatter
+            if (creature.player) continue;
+
+            // Get the updated statblock from the bestiary
+            const updatedStatblock = this.getBaseCreatureFromBestiary(creature.name);
+            if (!updatedStatblock) continue;
+
+            // Prepare selective update - only update statblock properties, preserve combat state
+            const updates: any = {};
+
+            // Always update images (primary use case)
+            if (updatedStatblock.image !== creature.image) {
+                updates.image = updatedStatblock.image;
+            }
+            if ((updatedStatblock as any).image_url !== creature.image_url) {
+                updates.image_url = (updatedStatblock as any).image_url;
+            }
+
+            // Update base AC only if current AC hasn't been modified
+            if (updatedStatblock.ac !== undefined && creature.ac === creature.current_ac) {
+                updates.ac = updatedStatblock.ac;
+                updates.current_ac = updatedStatblock.ac;
+            }
+
+            // Update max HP only if it hasn't been modified in combat
+            if (updatedStatblock.hp !== undefined && creature.max === creature.current_max) {
+                const newMaxHp = Number(updatedStatblock.hp);
+                if (!isNaN(newMaxHp) && newMaxHp !== creature.max) {
+                    updates.max = newMaxHp;
+                    updates.current_max = newMaxHp;
+                    // Adjust current HP if it exceeds new max
+                    if (creature.hp > newMaxHp) {
+                        updates.hp = newMaxHp;
+                    }
+                }
+            }
+
+            // Update initiative modifier
+            const newModifier = "modifier" in updatedStatblock
+                ? updatedStatblock.modifier
+                : Math.floor(
+                      (("stats" in updatedStatblock && updatedStatblock.stats.length > 1
+                          ? updatedStatblock.stats[1]
+                          : 10) -
+                          10) /
+                          2
+                  );
+            if (newModifier !== undefined && newModifier !== creature.modifier) {
+                updates.modifier = newModifier;
+            }
+
+            // Update other non-combat properties
+            if (updatedStatblock.cr !== undefined && updatedStatblock.cr !== creature.cr) {
+                updates.cr = updatedStatblock.cr;
+            }
+            if (updatedStatblock.xp !== undefined && updatedStatblock.xp !== creature.xp) {
+                updates.xp = updatedStatblock.xp;
+            }
+            if (updatedStatblock.hit_dice !== undefined && updatedStatblock.hit_dice !== creature.hit_dice) {
+                updates.hit_dice = updatedStatblock.hit_dice;
+            }
+            if (updatedStatblock["statblock-link"] !== undefined && updatedStatblock["statblock-link"] !== creature["statblock-link"]) {
+                updates["statblock-link"] = updatedStatblock["statblock-link"];
+            }
+
+            // Apply updates if any were found
+            if (Object.keys(updates).length > 0) {
+                creature.update(updates);
+                updatedCount++;
+            }
+        }
+
+        // Trigger UI update if any creatures were modified
+        if (updatedCount > 0) {
+            tracker.updateAndSave();
+            console.log(`Initiative Tracker: Updated ${updatedCount} creature(s) from Fantasy Statblocks bestiary`);
         }
     }
 }

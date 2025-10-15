@@ -8,7 +8,7 @@
     import LoadEncounter from "./LoadEncounter.svelte";
 
     import { tracker } from "../stores/tracker";
-    import { ExtraButtonComponent, Notice } from "obsidian";
+    import { ExtraButtonComponent, Notice, requestUrl } from "obsidian";
     import { ADD, COPY } from "src/utils";
     import Updating from "./Updating.svelte";
     import Logger from "src/logger/logger";
@@ -17,10 +17,11 @@
     import Legacy from "./create/Legacy.svelte";
     import type { Creature } from "src/utils/creature";
     import Difficulty from "./Difficulty.svelte";
+    import { BackgroundModal } from "./BackgroundModal";
 
     export let plugin: InitiativeTracker;
 
-    const { data } = tracker;
+    const { data, ordered, backgroundImageUrl } = tracker;
 
     $: difficulty = $data.displayDifficulty;
 
@@ -32,8 +33,6 @@
         tracker.setParty(plugin.data.defaultParty, plugin);
         tracker.roll(plugin);
     }
-
-    const { ordered } = tracker;
 
     setContext<InitiativeTracker>("plugin", plugin);
 
@@ -67,6 +66,19 @@
                 }
             });
     };
+
+    // Background Image Management
+    const openBackgroundModal = () => {
+        const modal = new BackgroundModal(
+            plugin.app,
+            plugin,
+            $ordered.filter(c => c.enabled && !c.hidden),
+            (imagePath: string) => {
+                tracker.setBackgroundImageUrl(imagePath);
+            }
+        );
+        modal.open();
+    };
 </script>
 
 <div class="obsidian-initiative-tracker">
@@ -75,7 +87,9 @@
         on:load={() => (loading = true)}
         on:add-creatures={() => editOrAdd()}
         on:player-view
+        on:toggle-fullscreen
         on:open-map
+        on:generate-background={openBackgroundModal}
     />
 
     <Metadata />

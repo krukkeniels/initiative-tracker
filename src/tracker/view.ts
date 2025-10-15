@@ -38,6 +38,7 @@ export default class TrackerView extends ItemView {
             }
         });
         this.ui.$on("player-view", () => this.openPlayerView());
+        this.ui.$on("toggle-fullscreen", () => this.togglePlayerViewFullscreen());
     }
     getViewType() {
         return INITIATIVE_TRACKER_VIEW;
@@ -84,6 +85,13 @@ export default class TrackerView extends ItemView {
     async openPlayerView() {
         await this.getPlayerView();
         this.playerViewOpened = true;
+    }
+
+    async togglePlayerViewFullscreen() {
+        const playerView = this.getExistingPlayerView();
+        if (playerView) {
+            playerView.toggleFullscreen();
+        }
     }
 }
 

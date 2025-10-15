@@ -300,6 +300,12 @@
     const playerView = (node: HTMLElement) => {
         new ExtraButtonComponent(node).setIcon("view");
     };
+    const fullscreenButton = (node: HTMLElement) => {
+        new ExtraButtonComponent(node).setIcon("maximize");
+    };
+    const backgroundImageButton = (node: HTMLElement) => {
+        new ExtraButtonComponent(node).setIcon("image");
+    };
     const logFileButton = (node: HTMLElement) => {
         new ExtraButtonComponent(node).setIcon("file-signature");
     };
@@ -332,9 +338,21 @@
         {#if desktop}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <div
+                use:backgroundImageButton
+                aria-label="Generate Background Image"
+                on:click={(evt) => dispatch("generate-background")}
+            />
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <div
                 use:playerView
                 aria-label="Open Player View"
                 on:click={(evt) => dispatch("player-view")}
+            />
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <div
+                use:fullscreenButton
+                aria-label="Toggle Player View Fullscreen"
+                on:click={(evt) => dispatch("toggle-fullscreen")}
             />
         {/if}
         <!-- svelte-ignore a11y-click-events-have-key-events -->

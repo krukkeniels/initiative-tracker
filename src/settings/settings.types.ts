@@ -48,6 +48,12 @@ export interface InitiativeTrackerData {
     version: number[];
 
     rollPlayerInitiatives: RollPlayerInitiativeBehavior;
+
+    // OpenAI Image Generation
+    openaiApiKey: string;
+    imageStyle: string;
+    imageGrimness: number;
+    backgroundImagesFolder: string;
 }
 export interface InputValidate {
     input: HTMLInputElement;
@@ -56,4 +62,15 @@ export interface InputValidate {
 export interface Party {
     players: string[];
     name: string;
+}
+
+export interface BackgroundMetadata {
+    name: string;
+    type: "general" | "specific";
+    description?: string;
+    creatures?: string[];
+    style: string;
+    grimness: number;
+    imagePath: string;
+    createdAt: number;
 }

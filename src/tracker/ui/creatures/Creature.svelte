@@ -5,6 +5,7 @@
     import CreatureControls from "./CreatureControls.svelte";
     import Status from "./Status.svelte";
     import ConditionSelector from "./ConditionSelector.svelte";
+    import HPPopup from "./HPPopup.svelte";
     import { Platform, setIcon, ExtraButtonComponent } from "obsidian";
     import { tracker } from "../../stores/tracker";
     import { createEventDispatcher, getContext } from "svelte";
@@ -17,6 +18,9 @@
 
     export let creature: Creature;
     $: statuses = creature.status;
+
+    let showHPPopup = false;
+    let hpButtonElement: HTMLElement;
 
     const name = () => creature.getName();
     const statblockLink = () => creature.getStatblockLink();
@@ -86,6 +90,55 @@
             change: { status: [condition] }
         });
     };
+
+    const handleHPClick = (evt: MouseEvent) => {
+        if (showHPPopup) {
+            showHPPopup = false;
+            return;
+        }
+
+        showHPPopup = true;
+    };
+
+    const handleHPApply = (evt: CustomEvent<{ type: string; value: string }>) => {
+        const { type, value } = evt.detail;
+
+        if (type === "hp") {
+            // Apply HP change (damage or healing)
+            tracker.updateCreatures({
+                creature,
+                change: { hp: Number(value) }
+            });
+        } else if (type === "temp") {
+            // Apply temp HP directly using temp field
+            tracker.updateCreatures({
+                creature,
+                change: { temp: Number(value) }
+            });
+        } else if (type === "fillmax") {
+            // Fill HP to maximum
+            const healAmount = creature.max - creature.hp;
+            if (healAmount > 0) {
+                tracker.updateCreatures({
+                    creature,
+                    change: { hp: healAmount }
+                });
+            }
+        }
+
+        showHPPopup = false;
+    };
+
+    const handleHPCancel = () => {
+        showHPPopup = false;
+    };
+
+    const handleOverlayClick = (evt: MouseEvent) => {
+        // Close popup when clicking the overlay (not the popup itself)
+        if (evt.target === evt.currentTarget) {
+            showHPPopup = false;
+        }
+    };
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -150,17 +203,30 @@
 <td
     class="hp-container creature-adder"
     class:mobile={Platform.isMobile}
-    on:click|stopPropagation={(evt) => {
-        $updateTarget = "hp";
-        tracker.setUpdate(creature, evt);
-    }}
 >
-    <div class="hp-content" class:selected={$updating.has(creature)}>
+    <div
+        bind:this={hpButtonElement}
+        class="hp-content"
+        class:selected={showHPPopup}
+        on:click|stopPropagation={handleHPClick}
+    >
         <div class="hp-icon" use:hpIconFn />
         <div class="hp-display">
             {@html creature.hpDisplay}
         </div>
     </div>
+
+    {#if showHPPopup}
+        <div class="hp-popup-overlay" on:click={handleOverlayClick}>
+            <HPPopup
+                currentHP={creature.hp}
+                maxHP={creature.max}
+                tempHP={creature.temp}
+                on:apply={handleHPApply}
+                on:cancel={handleHPCancel}
+            />
+        </div>
+    {/if}
 </td>
 
 <td class="controls-container">
@@ -271,5 +337,17 @@
     }
     .mobile {
         font-size: smaller;
+    }
+    .hp-popup-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        background-color: rgba(0, 0, 0, 0.3);
     }
 </style>

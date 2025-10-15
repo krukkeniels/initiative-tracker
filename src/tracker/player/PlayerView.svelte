@@ -1,7 +1,6 @@
 <script lang="ts">
-    import { setIcon } from "obsidian";
+    import { setIcon, Notice, Modal } from "obsidian";
     import { fade } from "svelte/transition";
-    import { SyncLoader } from "svelte-loading-spinners";
     import { onMount, onDestroy } from "svelte";
 
     import { AC, FRIENDLY, HP, INITIATIVE } from "src/utils";
@@ -12,7 +11,7 @@
     import { getHpIconSvg } from "src/utils/hp-icons";
 
     import { tracker } from "../stores/tracker";
-    const { state, ordered, data } = tracker;
+    const { state, ordered, data, backgroundImageUrl, round } = tracker;
 
     export let plugin: InitiativeTracker;
 
@@ -105,51 +104,57 @@
         }
     });
 
-    // Generate looped display array: [Active, Next1, Next2, ..., wrapping around]
+    // Track active index for carousel sliding
+    $: activeCreatureIndex = (() => {
+        if (activeAndVisible.length === 0) return -1;
+        return activeAndVisible.findIndex(c => amIActive(c) && $state);
+    })();
+
+    // Calculate carousel offset for smooth sliding
+    const CARD_WIDTH = 280;
+    const CARD_GAP = 20;
+    const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP;
+
+    // Fixed number of buffer cards before the active creature
+    const BUFFER_BEFORE = 1;
+
+    // Simple infinite carousel: always render with active creature at a fixed position
     $: displayCreatures = (() => {
         if (activeAndVisible.length === 0) return [];
 
-        console.log("[PlayerView] Generating displayCreatures");
-        console.log("[PlayerView] Total creatures:", activeAndVisible.length);
-        activeAndVisible.forEach((c, idx) => {
-            console.log(`[PlayerView] Creature ${idx}: ${c.getName()}`, {
-                id: c.id,
-                image: c.image,
-                image_url: c.image_url,
-                hasImage: !!(c.image || c.image_url)
-            });
+        const totalCreatures = activeAndVisible.length;
+        const activeIndex = activeCreatureIndex === -1 ? 0 : activeCreatureIndex;
+
+        console.log("[PlayerView] Generating displayCreatures", {
+            totalCreatures,
+            activeIndex,
+            visibleCardCount
         });
 
-        const activeIndex = activeAndVisible.findIndex(c => amIActive(c) && $state);
-
-        // If no active, show first N creatures
-        if (activeIndex === -1) {
-            const result = [];
-            for (let i = 0; i < Math.min(visibleCardCount, activeAndVisible.length); i++) {
-                result.push({
-                    creature: activeAndVisible[i],
-                    displayId: `${activeAndVisible[i].id}-${i}`,
-                    isActive: false
-                });
-            }
-            return result;
-        }
-
         const result = [];
-        const totalCreatures = activeAndVisible.length;
 
-        // Generate cards to fill viewport with looping
-        for (let i = 0; i < visibleCardCount; i++) {
-            const index = (activeIndex + i) % totalCreatures;
+        // Render enough cards: buffer before + active + visible after + buffer
+        const totalToRender = BUFFER_BEFORE + visibleCardCount + BUFFER_BEFORE;
+
+        // Start from (active - BUFFER_BEFORE), wrap around using modulo
+        for (let i = 0; i < totalToRender; i++) {
+            const offset = i - BUFFER_BEFORE; // Relative to active (-1, 0, 1, 2, ...)
+            const creatureIndex = ((activeIndex + offset) % totalCreatures + totalCreatures) % totalCreatures;
+            const creature = activeAndVisible[creatureIndex];
+
             result.push({
-                creature: activeAndVisible[index],
-                displayId: `${activeAndVisible[index].id}-${i}`,
-                isActive: i === 0 // First card (active) is always position 0
+                creature,
+                displayId: `creature-${creature.id}`,
+                isActive: i === BUFFER_BEFORE && activeCreatureIndex !== -1  // Active is at position BUFFER_BEFORE
             });
         }
 
+        console.log("[PlayerView] Rendered creatures:", result.map(r => r.creature.getName()));
         return result;
     })();
+
+    // Offset to keep active creature at the left edge (accounting for buffer)
+    $: carouselOffset = -BUFFER_BEFORE * CARD_TOTAL_WIDTH;
     const friendIcon = (node: HTMLElement) => {
         setIcon(node, FRIENDLY);
     };
@@ -222,12 +227,20 @@
             conditionResult: hasImage
         });
         return true; // Always return true so it doesn't affect rendering
-    };</script>
+    };
+
+</script>
 
 <div class="player-view-container" transition:fade>
+    <!-- Background Image -->
+    {#if $backgroundImageUrl}
+        <div class="background-image" style="background-image: url({getImageUrl($backgroundImageUrl)})" transition:fade></div>
+        <div class="background-overlay"></div>
+    {/if}
+
     <!-- LEFT PANE: Detail Carousel -->
     <div class="carousel-container" bind:this={carouselContainer}>
-        <div class="carousel-track">
+        <div class="carousel-track" style="transform: translateX({carouselOffset}px)">
             {#each displayCreatures as item (item.displayId)}
                 {@const creature = item.creature}
                 {@const _ = logCreatureImage(creature)}
@@ -328,55 +341,46 @@
 
     <!-- RIGHT PANE: Initiative Sidebar -->
     <div class="initiative-sidebar">
-        <div class="sidebar-header">INITIATIVE</div>
+        <div class="sidebar-header">ROUND {$round}</div>
         {#each activeAndVisible as creature (creature.id)}
             <div
                 class="initiative-item creature-type-{getCreatureType(creature)}"
                 class:active={amIActive(creature) && $state}
             >
-                <div class="init-main-row">
-                    <span class="init-number">{creature.initiative}</span>
-                    <span class="init-name">{name(creature)}</span>
-                </div>
+                <span class="init-number">{creature.initiative}</span>
+                <span class="init-name">{name(creature)}</span>
 
-                <div class="init-details-row">
-                    <!-- Health Icons -->
-                    {#if creature.player && $data.diplayPlayerHPValues}
-                        <div class="sidebar-health">
-                            <span class="sidebar-hp-text">{@html creature.hpDisplay}</span>
-                        </div>
-                    {:else}
-                        {@const hpIcon = getHpIcon(creature)}
-                        <div class="sidebar-health">
-                            {#if hpIcon === "skull"}
-                                <span use:skullIcon class="sidebar-skull" />
-                            {:else}
-                                <span class="sidebar-hp-icon">{@html getHpIconSvg(hpIcon)}</span>
+                <!-- Health Icons -->
+                {#if creature.player && $data.diplayPlayerHPValues}
+                    <div class="sidebar-health">
+                        <span class="sidebar-hp-text">{@html creature.hpDisplay}</span>
+                    </div>
+                {:else}
+                    {@const hpIcon = getHpIcon(creature)}
+                    <div class="sidebar-health">
+                        {#if hpIcon === "skull"}
+                            <span use:skullIcon class="sidebar-skull" />
+                        {:else}
+                            <span class="sidebar-hp-icon">{@html getHpIconSvg(hpIcon)}</span>
+                        {/if}
+                    </div>
+                {/if}
+
+                <!-- Condition Icons -->
+                {#if creature.status.size > 0}
+                    <div class="sidebar-conditions">
+                        {#each [...creature.status].slice(0, 3) as status}
+                            {#if status.icon}
+                                <span class="sidebar-condition-icon" title={status.name}>
+                                    {@html getConditionIconSvg(status.icon)}
+                                </span>
                             {/if}
-                        </div>
-                    {/if}
-
-                    <!-- Separator -->
-                    {#if creature.status.size > 0}
-                        <span class="sidebar-divider">|</span>
-                    {/if}
-
-                    <!-- Condition Icons -->
-                    {#if creature.status.size > 0}
-                        <div class="sidebar-conditions">
-                            {#each [...creature.status].slice(0, 3) as status}
-                                {#if status.icon}
-                                    <span class="sidebar-condition-icon" title={status.name}>
-                                        {@html getConditionIconSvg(status.icon)}
-                                    </span>
-                                {/if}
-                            {/each}
-                            {#if creature.status.size > 3}
-                                <span class="sidebar-condition-more">+{creature.status.size - 3}</span>
-                            {/if}
-                        </div>
-                    {/if}
-                </div>
+                        {/each}
+                        {#if creature.status.size > 3}
+                            <span class="sidebar-condition-more">+{creature.status.size - 3}</span>
+                        {/if}
+                    </div>
+                {/if}
             </div>
         {/each}
     </div>
@@ -409,7 +413,10 @@
         overflow: visible; /* Show full cards */
         justify-content: flex-start;
         align-items: center;
-        width: 100%;
+        width: max-content; /* Allow track to extend beyond viewport */
+        position: relative; /* For proper animation stacking context */
+        transition: transform 0.45s cubic-bezier(0.33, 1, 0.68, 1); /* Smooth carousel sliding */
+        will-change: transform; /* Optimize for transform animations */
     }
 
     /* === DETAIL CARD === */
@@ -423,6 +430,7 @@
         transition: all 0.3s ease;
         position: relative;
         overflow: visible; /* Allow health badge to overflow */
+        will-change: transform; /* Optimize for animations */
     }
 
     /* === CREATURE TYPE BORDERS & BACKGROUNDS === */
@@ -554,15 +562,15 @@
     }
 
     .no-image-placeholder.creature-type-monster {
-        background: linear-gradient(135deg, rgba(220, 38, 38, 0.3) 0%, rgba(153, 27, 27, 0.5) 100%);
+        background: linear-gradient(135deg, rgba(220, 38, 38, 1.0) 0%, rgba(153, 27, 27, 1.0) 100%);
     }
 
     .no-image-placeholder.creature-type-ally {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(5, 150, 105, 0.5) 100%);
+        background: linear-gradient(135deg, rgba(16, 185, 129, 1.0) 0%, rgba(5, 150, 105, 1.0) 100%);
     }
 
     .no-image-placeholder.creature-type-player {
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(37, 99, 235, 0.5) 100%);
+        background: linear-gradient(135deg, rgba(59, 130, 246, 1.0) 0%, rgba(37, 99, 235, 1.0) 100%);
     }
 
     .no-image-placeholder :global(svg) {
@@ -682,48 +690,53 @@
     /* === INITIATIVE SIDEBAR OVERLAY === */
     .initiative-sidebar {
         position: absolute;
-        top: 0;
-        right: 0;
+        top: 16px;
+        right: 16px;
         width: auto;
         min-width: 220px;
         max-width: 300px;
-        max-height: calc(100% - 32px);
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
+        max-height: calc(100% - 64px);
+        display: grid;
+        grid-template-columns: 40px 1fr 60px auto;
+        gap: 4px 10px;
         padding: 16px;
-        background: rgba(0, 0, 0, 0.15);
+        background: rgba(0, 0, 0, 0.9);
         border-radius: 12px;
         overflow-y: auto;
         z-index: 100;
         backdrop-filter: blur(8px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        align-items: center;
     }
 
     :global(.theme-dark) .initiative-sidebar {
-        background: rgba(0, 0, 0, 0.4);
+        background: rgba(0, 0, 0, 0.9);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     }
 
     .sidebar-header {
+        grid-column: 1 / -1;
         font-size: 1.1em;
         font-weight: 700;
         text-align: center;
         padding: 8px;
         margin-bottom: 8px;
-        border-bottom: 2px solid var(--background-modifier-border);
+        border-bottom: 2px solid rgba(255, 255, 255, 0.3);
         letter-spacing: 0.05em;
+        color: rgba(255, 255, 255, 0.95);
     }
 
     /* === INITIATIVE ITEM === */
     .initiative-item {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding: 10px 12px;
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: subgrid;
+        align-items: center;
+        padding: 8px 0;
         border-radius: 6px;
         transition: all 0.2s ease;
         font-size: 0.95em;
+        color: rgba(255, 255, 255, 0.9);
     }
 
     .initiative-item.creature-type-monster {
@@ -771,23 +784,19 @@
             0 2px 8px rgba(0, 0, 0, 0.5);
     }
 
-    /* Main row with initiative number and name */
-    .init-main-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
     .init-number {
-        flex: 0 0 32px;
+        width: 32px;
         height: 32px;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 50%;
-        background: var(--background-modifier-border);
+        background: rgba(255, 255, 255, 0.2);
         font-weight: 600;
         font-size: 0.95em;
+        color: rgba(255, 255, 255, 0.95);
+        justify-self: center;
+        margin: 0 4px;
     }
 
     .initiative-item.active .init-number {
@@ -797,24 +806,9 @@
     }
 
     .init-name {
-        flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-    }
-
-    /* Details row with health and conditions */
-    .init-details-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding-left: 42px; /* Align with name (32px init number + 10px gap) */
-        font-size: 0.9em;
-    }
-
-    .sidebar-divider {
-        color: var(--text-muted);
-        opacity: 0.5;
         margin: 0 4px;
     }
 
@@ -823,26 +817,30 @@
         display: flex;
         gap: 2px;
         align-items: center;
+        justify-content: center;
+        margin: 0 4px;
     }
 
     .sidebar-hp-text {
         font-size: 0.85em;
         font-weight: 600;
         white-space: nowrap;
+        color: rgba(255, 255, 255, 0.9);
     }
 
     .sidebar-health :global(svg) {
         width: 14px;
         height: 14px;
         opacity: 0.9;
+        color: rgba(255, 255, 255, 0.85);
     }
 
     .sidebar-skull :global(svg) {
-        color: var(--text-muted);
+        color: rgba(255, 255, 255, 0.6);
     }
 
     .sidebar-heart :global(svg) {
-        color: var(--text-error);
+        color: rgba(255, 255, 255, 0.85);
     }
 
     .sidebar-hp-icon {
@@ -856,7 +854,7 @@
         height: 16px;
         opacity: 0.9;
         fill: currentColor;
-        color: var(--text-error);
+        color: rgba(255, 255, 255, 0.85);
         filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
     }
 
@@ -865,6 +863,8 @@
         display: flex;
         gap: 4px;
         align-items: center;
+        flex-wrap: wrap;
+        margin: 0 4px;
     }
 
     .sidebar-condition-icon {
@@ -873,8 +873,7 @@
         justify-content: center;
         width: 20px;
         height: 20px;
-        opacity: 0.8;
-        color: var(--text-normal);
+        color: rgba(255, 255, 255, 0.85);
     }
 
     .sidebar-condition-icon :global(svg) {
@@ -895,7 +894,7 @@
         padding: 2px 4px;
         border-radius: 4px;
         background: rgba(251, 191, 36, 0.3);
-        color: var(--text-normal);
+        color: rgba(255, 255, 255, 0.95);
     }
 
     /* === STATUS BADGE UPDATES === */
@@ -941,13 +940,11 @@
 
     /* === CONDITION DETAILS SECTION === */
     .condition-details-section {
-        position: absolute;
+        position: fixed;
         bottom: 12px;
         left: 12px;
         right: 12px; /* Use full width */
-        max-height: 160px;
-        overflow-y: auto;
-        background: rgba(0, 0, 0, 0.15);
+        background: rgba(0, 0, 0, 0.9);
         backdrop-filter: blur(12px);
         border-radius: 8px;
         padding: 10px 12px;
@@ -956,7 +953,7 @@
     }
 
     :global(.theme-dark) .condition-details-section {
-        background: rgba(0, 0, 0, 0.4);
+        background: rgba(0, 0, 0, 0.9);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     }
 
@@ -965,18 +962,17 @@
         font-weight: 700;
         text-align: center;
         padding: 0 0 8px 0;
-        border-bottom: 1px solid var(--background-modifier-border);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
         letter-spacing: 0.05em;
         margin-bottom: 8px;
-        opacity: 0.9;
+        color: rgba(255, 255, 255, 0.95);
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     }
 
     .condition-cards-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         gap: 8px;
-        max-height: 110px;
-        overflow-y: auto;
     }
 
     /* === CONDITION CARD === */
@@ -985,24 +981,25 @@
         gap: 8px;
         padding: 8px;
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.15);
         backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.3);
         transition: all 0.2s ease;
     }
 
     .condition-card:hover {
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.2);
         transform: translateY(-1px);
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     }
 
     :global(.theme-dark) .condition-card {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.3);
     }
 
     :global(.theme-dark) .condition-card:hover {
-        background: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.2);
     }
 
     /* Creature type borders for condition cards */
@@ -1025,14 +1022,14 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--text-normal);
+        color: rgba(255, 255, 255, 0.95);
     }
 
     .condition-card-icon :global(svg) {
         width: 100%;
         height: 100%;
         fill: currentColor;
-        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3));
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
     }
 
     .condition-card-content {
@@ -1044,8 +1041,8 @@
         font-size: 0.95em;
         font-weight: 700;
         margin-bottom: 4px;
-        color: var(--text-normal);
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        color: rgba(255, 255, 255, 0.95);
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -1054,7 +1051,8 @@
     .condition-card-description {
         font-size: 0.8em;
         line-height: 1.4;
-        color: var(--text-muted);
+        color: rgba(255, 255, 255, 0.8);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
@@ -1062,28 +1060,55 @@
         text-overflow: ellipsis;
     }
 
-    /* Scrollbar styling for condition cards grid */
-    .condition-cards-grid::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    .condition-cards-grid::-webkit-scrollbar-track {
-        background: rgba(0, 0, 0, 0.1);
-        border-radius: 3px;
-    }
-
-    .condition-cards-grid::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.3);
-        border-radius: 3px;
-    }
-
-    .condition-cards-grid::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.4);
-    }
-
     @media (prefers-reduced-motion: reduce) {
         .detail-card.active {
             animation: none;
         }
+        .detail-card {
+            transition: none !important;
+        }
+    }
+
+    /* === BACKGROUND IMAGE === */
+    .background-image {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        z-index: 0;
+    }
+
+    .background-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0.1) 0%,
+            rgba(0, 0, 0, 0.2) 50%,
+            rgba(0, 0, 0, 0.3) 100%
+        );
+        z-index: 1;
+    }
+
+    :global(.theme-dark) .background-overlay {
+        background: linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, 0.2) 0%,
+            rgba(0, 0, 0, 0.3) 50%,
+            rgba(0, 0, 0, 0.4) 100%
+        );
+    }
+
+    /* Ensure content layers above background */
+    .carousel-container {
+        position: relative;
+        z-index: 10;
     }
 </style>

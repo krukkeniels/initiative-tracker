@@ -92,6 +92,7 @@ function createTracker() {
     };
     const $name = writable<string | null>();
     const $party = writable<string | null>();
+    const $backgroundImageUrl = writable<string | undefined>(undefined);
 
     const data = writable<InitiativeTrackerData>();
     const descending = derived(data, (data) => {
@@ -302,7 +303,8 @@ function createTracker() {
             name: get($name)!,
             round: get($round),
             logFile: _logger?.getLogFile() ?? null,
-            rollHP: false
+            rollHP: false,
+            backgroundImageUrl: get($backgroundImageUrl)
         };
     };
 
@@ -766,6 +768,7 @@ function createTracker() {
                 $round.set(state?.round ?? 1);
                 $state.set(state?.state ?? false);
                 $name.set(state?.name ?? null);
+                $backgroundImageUrl.set(state?.backgroundImageUrl ?? undefined);
 
                 if (!state?.creatures) {
                     /**
@@ -1011,7 +1014,14 @@ function createTracker() {
         setViewingCreature: (creature: Creature | null) => {
             viewingCreature.set(creature);
         },
-        getViewingCreature: () => get(viewingCreature)
+        getViewingCreature: () => get(viewingCreature),
+
+        backgroundImageUrl: $backgroundImageUrl,
+        setBackgroundImageUrl: (url: string | undefined) => {
+            $backgroundImageUrl.set(url);
+            trySave();
+        },
+        getBackgroundImageUrl: () => get($backgroundImageUrl)
     };
 }
 
