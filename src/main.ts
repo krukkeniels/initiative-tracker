@@ -117,6 +117,29 @@ export default class InitiativeTracker extends Plugin {
         );
     }
 
+    private normalizePlayerHP(player: HomebrewCreature) {
+        const toNumber = (value: unknown): number | undefined => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : undefined;
+        };
+        const maxHP = toNumber(player.hp);
+        const currentHP = toNumber(player.current_hp);
+        if (maxHP !== undefined) {
+            player.hp = maxHP;
+            const boundedCurrent = currentHP ?? maxHP;
+            player.current_hp = Math.min(
+                Math.max(boundedCurrent, 0),
+                maxHP
+            );
+        } else if (currentHP !== undefined) {
+            player.hp = currentHP;
+            player.current_hp = currentHP;
+        } else {
+            player.hp = undefined;
+            player.current_hp = undefined;
+        }
+    }
+
     addEncounter(name: string, encounter: InitiativeViewState) {
         this.data.encounters[name] = encounter;
         this.registerCommand(name);
@@ -385,6 +408,9 @@ export default class InitiativeTracker extends Plugin {
             }
         });
 
+        for (const player of this.data.players) {
+            this.normalizePlayerHP(player);
+        }
         this.playerCreatures = new Map(
             this.data.players.map((p) => [p.name, Creature.from(p)])
         );
@@ -420,9 +446,46 @@ export default class InitiativeTracker extends Plugin {
                         this.app.metadataCache.getFileCache(file)?.frontmatter;
                     if (!frontmatter) return;
                     for (let player of players) {
-                        const { ac, hp, modifier, level, name, image, image_url } = frontmatter;
+                        const {
+                            ac,
+                            hp,
+                            max_hp,
+                            modifier,
+                            level,
+                            name,
+                            image,
+                            image_url
+                        } = frontmatter;
+                        const parseNumber = (value: unknown): number | undefined => {
+                            const parsed = Number(value);
+                            return Number.isFinite(parsed) ? parsed : undefined;
+                        };
+
                         player.ac = ac;
-                        player.hp = hp;
+
+                        const parsedMaxHP =
+                            max_hp !== undefined ? parseNumber(max_hp) : undefined;
+                        const parsedCurrentHP =
+                            hp !== undefined ? parseNumber(hp) : undefined;
+                        if (parsedMaxHP !== undefined || parsedCurrentHP !== undefined) {
+                            const maxHP =
+                                parsedMaxHP ??
+                                parsedCurrentHP ??
+                                (typeof player.hp === "number" ? player.hp : 0);
+                            player.hp = maxHP;
+                            const currentHP =
+                                parsedCurrentHP ??
+                                (typeof player.current_hp === "number"
+                                    ? player.current_hp
+                                    : maxHP);
+                            player.current_hp = Math.min(
+                                Math.max(currentHP, 0),
+                                maxHP
+                            );
+                        }
+
+                        this.normalizePlayerHP(player);
+
                         player.modifier = modifier;
                         player.level = level;
                         player.name = name ? name : player.name;
@@ -440,13 +503,36 @@ export default class InitiativeTracker extends Plugin {
                                 .getOrderedCreatures()
                                 .find((c) => c.name == player.name);
                             if (creature) {
-                                tracker.updateCreatures({
-                                    creature,
-                                    change: {
-                                        set_max_hp: player.hp,
-                                        ac: player.ac
+                                const change: {
+                                    set_hp?: number;
+                                    set_max_hp?: number;
+                                    ac?: number | string;
+                                } = {};
+                                const currentHP =
+                                    typeof player.current_hp === "number"
+                                        ? player.current_hp
+                                        : undefined;
+                                if (typeof currentHP === "number") {
+                                    change.set_hp = currentHP;
+                                }
+                                if (typeof player.hp === "number") {
+                                    change.set_max_hp = player.hp;
+                                    if (
+                                        change.set_hp === undefined &&
+                                        typeof currentHP !== "number"
+                                    ) {
+                                        change.set_hp = player.hp;
                                     }
-                                });
+                                }
+                                if (player.ac !== undefined) {
+                                    change.ac = player.ac;
+                                }
+                                if (Object.keys(change).length) {
+                                    tracker.updateCreatures({
+                                        creature,
+                                        change
+                                    });
+                                }
                             }
                         }
                     }
@@ -662,6 +748,7 @@ export default class InitiativeTracker extends Plugin {
         this.app.workspace.revealLeaf(this.builder.leaf);
     }
     async updatePlayer(existing: HomebrewCreature, player: HomebrewCreature) {
+        this.normalizePlayerHP(player);
         if (!this.playerCreatures.has(existing.name)) {
             await this.savePlayer(player);
             return;
@@ -688,12 +775,14 @@ export default class InitiativeTracker extends Plugin {
     }
 
     async savePlayer(player: HomebrewCreature) {
+        this.normalizePlayerHP(player);
         this.data.players.push(player);
         this.playerCreatures.set(player.name, Creature.from(player));
         await this.saveSettings();
     }
     async savePlayers(...players: HomebrewCreature[]) {
         for (let monster of players) {
+            this.normalizePlayerHP(monster);
             this.data.players.push(monster);
             this.playerCreatures.set(monster.name, Creature.from(monster));
         }

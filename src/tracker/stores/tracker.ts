@@ -233,10 +233,10 @@ function createTracker() {
                     creature.hp = creature.current_max;
                 }
             }
-            if (change.set_hp) {
+            if (change.set_hp !== undefined) {
                 creature.hp = change.set_hp;
             }
-            if (change.set_max_hp) {
+            if (change.set_max_hp !== undefined) {
                 creature.current_max = creature.max = change.set_max_hp;
             }
             if (change.ac) {
@@ -1254,10 +1254,10 @@ class Tracker {
                     creature.hp = creature.current_max;
                 }
             }
-            if (change.set_hp) {
+            if (change.set_hp !== undefined) {
                 creature.hp = change.set_hp;
             }
-            if (change.set_max_hp) {
+            if (change.set_max_hp !== undefined) {
                 creature.current_max = creature.max = change.set_max_hp;
             }
             if (change.ac) {
