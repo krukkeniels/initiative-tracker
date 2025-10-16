@@ -80,7 +80,37 @@ export class Creature {
         this.setModifier(creature.modifier);
         this.current_ac = this.ac = creature.ac ?? undefined;
         this.dirty_ac = false;
-        this.max = this.current_max = creature.hp ? Number(creature.hp) : 0;
+
+        const rawMaxHp =
+            (creature as any).max_hp ??
+            (creature as any).maxHp ??
+            creature.hp;
+        const parsedMaxHp =
+            rawMaxHp === undefined || rawMaxHp === null || rawMaxHp === ""
+                ? undefined
+                : Number(rawMaxHp);
+        this.max = this.current_max =
+            parsedMaxHp !== undefined && !Number.isNaN(parsedMaxHp)
+                ? parsedMaxHp
+                : 0;
+
+        const rawCurrentHp =
+            (creature as any).currentHP ??
+            (creature as any).current_hp ??
+            (creature as any).hp ??
+            this.max;
+        const parsedCurrentHp =
+            rawCurrentHp === undefined || rawCurrentHp === null || rawCurrentHp === ""
+                ? undefined
+                : Number(rawCurrentHp);
+        this.hp =
+            parsedCurrentHp !== undefined && !Number.isNaN(parsedCurrentHp)
+                ? parsedCurrentHp
+                : this.max;
+        if (this.hp > this.max) {
+            this.hp = this.max;
+        }
+
         this.note = creature.note;
         this.level = creature.level;
         this.player = creature.player;
@@ -89,7 +119,6 @@ export class Creature {
 
         this.marker = creature.marker;
 
-        this.hp = this.max;
         this.temp = 0;
         this.source = creature.source;
 
@@ -213,9 +242,41 @@ export class Creature {
             this.setModifier(creature.modifier);
         }
 
-        if ("hp" in creature && creature.hp !== undefined) {
-            this.current_max = this.max = creature.hp ? Number(creature.hp) : 0;
+        const setMaxHp = (value: unknown) => {
+            if (value === undefined || value === null || value === "") {
+                this.current_max = this.max = 0;
+                if (this.hp > this.max) this.hp = this.max;
+                return;
+            }
+            const parsed = Number(value);
+            this.current_max = this.max = Number.isNaN(parsed) ? 0 : parsed;
             if (this.hp > this.max) this.hp = this.max;
+        };
+        if ("hp" in creature && creature.hp !== undefined) {
+            setMaxHp(creature.hp);
+        }
+        if ("max_hp" in creature && (creature as any).max_hp !== undefined) {
+            setMaxHp((creature as any).max_hp);
+        }
+
+        const setCurrentHp = (value: unknown) => {
+            if (value === undefined || value === null || value === "") {
+                return;
+            }
+            const parsed = Number(value);
+            if (Number.isNaN(parsed)) {
+                return;
+            }
+            this.hp = parsed;
+            if (this.hp > this.current_max) {
+                this.hp = this.current_max;
+            }
+        };
+        if ("currentHP" in creature && creature.currentHP !== undefined) {
+            setCurrentHp(creature.currentHP);
+        }
+        if ("current_hp" in creature && (creature as any).current_hp !== undefined) {
+            setCurrentHp((creature as any).current_hp);
         }
 
         if ("ac" in creature && creature.ac !== undefined) {

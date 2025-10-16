@@ -414,7 +414,7 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
             setIcon(
                 headers.createDiv({
                     attr: {
-                        "aria-label": "Max HP"
+                        "aria-label": "HP"
                     }
                 }),
                 HP
@@ -446,7 +446,12 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
                     text: `${player.level ?? DEFAULT_UNDEFINED}`
                 });
                 playerDiv.createDiv({
-                    text: `${player.hp ?? DEFAULT_UNDEFINED}`
+                    text:
+                        player.currentHP !== undefined && player.hp !== undefined
+                            ? `${player.currentHP}/${player.hp}`
+                            : player.currentHP !== undefined
+                            ? `${player.currentHP}`
+                            : `${player.hp ?? DEFAULT_UNDEFINED}`
                 });
                 playerDiv.createDiv({
                     text: `${player.ac ?? DEFAULT_UNDEFINED}`
@@ -492,7 +497,12 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
                     text: `${player.level ?? DEFAULT_UNDEFINED}`
                 });
                 playerDiv.createDiv({
-                    text: `${player.hp ?? DEFAULT_UNDEFINED}`
+                    text:
+                        player.hp !== undefined && player.max !== undefined
+                            ? `${player.hp}/${player.max}`
+                            : player.hp !== undefined
+                            ? `${player.hp}`
+                            : `${player.max ?? DEFAULT_UNDEFINED}`
                 });
                 playerDiv.createDiv({
                     text: `${player.ac ?? DEFAULT_UNDEFINED}`
@@ -1213,6 +1223,13 @@ class NewPlayerModal extends Modal {
 
         contentEl.empty();
 
+        if (
+            this.player.currentHP === undefined &&
+            typeof this.player.hp === "number"
+        ) {
+            this.player.currentHP = this.player.hp;
+        }
+
         let error = false;
 
         contentEl.createEl("h2", {
@@ -1238,9 +1255,42 @@ class NewPlayerModal extends Modal {
                     if (!metaData || !metaData.frontmatter) return;
                     const { ac, hp, modifier, level, name } =
                         metaData.frontmatter;
+                    const rawMaxHp =
+                        metaData.frontmatter["max_hp"] ??
+                        metaData.frontmatter["maxHp"];
+                    const rawCurrentHp =
+                        hp ??
+                        metaData.frontmatter["current_hp"] ??
+                        metaData.frontmatter["currentHP"];
+                    const parseNumber = (value: unknown): number | undefined => {
+                        if (value === null || value === undefined || value === "") {
+                            return undefined;
+                        }
+                        const parsed = Number(value);
+                        return Number.isFinite(parsed) ? parsed : undefined;
+                    };
+                    const parsedMaxHp =
+                        parseNumber(rawMaxHp) ??
+                        parseNumber(this.player.hp) ??
+                        parseNumber(rawCurrentHp);
+                    const parsedCurrentHp =
+                        parseNumber(rawCurrentHp) ??
+                        parseNumber(this.player.currentHP) ??
+                        parsedMaxHp;
                     this.player.name = name ?? this.player.name;
                     this.player.ac = parseInt(ac ?? this.player.ac, 10);
-                    this.player.hp = parseInt(hp ?? this.player.hp, 10);
+                    if (parsedMaxHp !== undefined) {
+                        this.player.hp = parsedMaxHp;
+                        this.player.max_hp = parsedMaxHp;
+                    }
+                    if (parsedCurrentHp !== undefined) {
+                        this.player.currentHP = parsedCurrentHp;
+                    } else if (
+                        this.player.currentHP === undefined &&
+                        this.player.hp !== undefined
+                    ) {
+                        this.player.currentHP = this.player.hp;
+                    }
                     this.player.level = parseInt(
                         level ?? this.player.level,
                         10
@@ -1258,6 +1308,7 @@ class NewPlayerModal extends Modal {
         let nameInput: InputValidate,
             levelInput: InputValidate,
             hpInput: InputValidate,
+            currentHpInput: InputValidate,
             modInput: InputValidate;
 
         new Setting(contentEl)
@@ -1324,6 +1375,24 @@ class NewPlayerModal extends Modal {
                 this.player.hp = Number(v);
             });
         });
+        new Setting(contentEl).setName("Current Hit Points").addText((t) => {
+            currentHpInput = {
+                input: t.inputEl,
+                validate: (i: HTMLInputElement) => {
+                    let error = false;
+                    if (isNaN(Number(i.value))) {
+                        i.addClass("has-error");
+                        error = true;
+                    }
+                    return error;
+                }
+            };
+            t.setValue(`${this.player.currentHP ?? ""}`);
+            t.onChange((v) => {
+                t.inputEl.removeClass("has-error");
+                this.player.currentHP = Number(v);
+            });
+        });
         new Setting(contentEl).setName("Armor Class").addText((t) => {
             t.setValue(`${this.player.ac ?? ""}`);
             t.onChange((v) => {
@@ -1360,6 +1429,7 @@ class NewPlayerModal extends Modal {
                     let error = this.validateInputs(
                         nameInput,
                         hpInput,
+                        currentHpInput,
                         modInput
                     );
                     if (error) {
@@ -1381,7 +1451,7 @@ class NewPlayerModal extends Modal {
             return b;
         });
 
-        this.validateInputs(nameInput, hpInput, modInput);
+        this.validateInputs(nameInput, hpInput, currentHpInput, modInput);
     }
     validateInputs(...inputs: InputValidate[]) {
         let error = false;
