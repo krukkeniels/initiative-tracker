@@ -80,7 +80,13 @@ export class Creature {
         this.setModifier(creature.modifier);
         this.current_ac = this.ac = creature.ac ?? undefined;
         this.dirty_ac = false;
-        this.max = this.current_max = creature.hp ? Number(creature.hp) : 0;
+        const providedMaxHP =
+            creature.hp !== undefined ? Number(creature.hp) : undefined;
+        const maxHP =
+            providedMaxHP !== undefined && Number.isFinite(providedMaxHP)
+                ? providedMaxHP
+                : 0;
+        this.max = this.current_max = maxHP;
         this.note = creature.note;
         this.level = creature.level;
         this.player = creature.player;
@@ -89,7 +95,18 @@ export class Creature {
 
         this.marker = creature.marker;
 
-        this.hp = this.max;
+        const providedCurrentHPValue =
+            "current_hp" in creature && creature.current_hp !== undefined
+                ? Number(creature.current_hp)
+                : undefined;
+        const providedCurrentHP =
+            providedCurrentHPValue !== undefined &&
+            Number.isFinite(providedCurrentHPValue)
+                ? providedCurrentHPValue
+                : undefined;
+        const normalizedCurrentHP =
+            providedCurrentHP !== undefined ? providedCurrentHP : this.max;
+        this.hp = Math.min(Math.max(normalizedCurrentHP, 0), this.max);
         this.temp = 0;
         this.source = creature.source;
 
@@ -214,8 +231,18 @@ export class Creature {
         }
 
         if ("hp" in creature && creature.hp !== undefined) {
-            this.current_max = this.max = creature.hp ? Number(creature.hp) : 0;
+            const parsedMax = Number(creature.hp);
+            this.current_max = this.max = Number.isFinite(parsedMax)
+                ? parsedMax
+                : 0;
             if (this.hp > this.max) this.hp = this.max;
+        }
+
+        if ("current_hp" in creature && creature.current_hp !== undefined) {
+            const current = Number(creature.current_hp);
+            if (Number.isFinite(current)) {
+                this.hp = Math.min(Math.max(current, 0), this.max);
+            }
         }
 
         if ("ac" in creature && creature.ac !== undefined) {

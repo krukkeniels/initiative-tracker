@@ -1236,11 +1236,30 @@ class NewPlayerModal extends Modal {
                     this.player.name = file.basename;
 
                     if (!metaData || !metaData.frontmatter) return;
-                    const { ac, hp, modifier, level, name } =
+                    const { ac, hp, max_hp, modifier, level, name } =
                         metaData.frontmatter;
                     this.player.name = name ?? this.player.name;
                     this.player.ac = parseInt(ac ?? this.player.ac, 10);
-                    this.player.hp = parseInt(hp ?? this.player.hp, 10);
+                    const parseNumber = (value: unknown): number | undefined => {
+                        const parsed = Number(value);
+                        return Number.isFinite(parsed) ? parsed : undefined;
+                    };
+                    const parsedMaxHP = parseNumber(
+                        max_hp ?? hp ?? this.player.hp
+                    );
+                    if (parsedMaxHP !== undefined) {
+                        this.player.hp = parsedMaxHP;
+                        if (
+                            typeof this.player.current_hp !== "number" ||
+                            this.player.current_hp > parsedMaxHP
+                        ) {
+                            this.player.current_hp = parsedMaxHP;
+                        }
+                    }
+                    const parsedCurrentHP = parseNumber(hp);
+                    if (parsedCurrentHP !== undefined) {
+                        this.player.current_hp = parsedCurrentHP;
+                    }
                     this.player.level = parseInt(
                         level ?? this.player.level,
                         10
@@ -1321,7 +1340,16 @@ class NewPlayerModal extends Modal {
             t.setValue(`${this.player.hp ?? ""}`);
             t.onChange((v) => {
                 t.inputEl.removeClass("has-error");
-                this.player.hp = Number(v);
+                const value = Number(v);
+                if (!isNaN(value)) {
+                    this.player.hp = value;
+                    if (
+                        typeof this.player.current_hp !== "number" ||
+                        this.player.current_hp > value
+                    ) {
+                        this.player.current_hp = value;
+                    }
+                }
             });
         });
         new Setting(contentEl).setName("Armor Class").addText((t) => {
