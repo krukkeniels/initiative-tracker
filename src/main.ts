@@ -385,6 +385,11 @@ export default class InitiativeTracker extends Plugin {
             }
         });
 
+        for (const player of this.data.players) {
+            if (player.currentHP === undefined && typeof player.hp === "number") {
+                player.currentHP = player.hp;
+            }
+        }
         this.playerCreatures = new Map(
             this.data.players.map((p) => [p.name, Creature.from(p)])
         );
@@ -419,10 +424,61 @@ export default class InitiativeTracker extends Plugin {
                     const frontmatter: FrontMatterCache =
                         this.app.metadataCache.getFileCache(file)?.frontmatter;
                     if (!frontmatter) return;
+                    const parseNumber = (value: unknown): number | undefined => {
+                        if (value === null || value === undefined || value === "") {
+                            return undefined;
+                        }
+                        const parsed = Number(value);
+                        return Number.isFinite(parsed) ? parsed : undefined;
+                    };
                     for (let player of players) {
                         const { ac, hp, modifier, level, name, image, image_url } = frontmatter;
+                        const rawMaxHp =
+                            frontmatter["max_hp"] ??
+                            frontmatter["maxHp"];
+                        const rawCurrentHp =
+                            hp ??
+                            frontmatter["current_hp"] ??
+                            frontmatter["currentHP"];
+
+                        const storedMaxHp = parseNumber(player.hp);
+                        const storedCurrentHp = parseNumber(player.currentHP);
+
+                        const parsedMaxHp = parseNumber(rawMaxHp);
+                        const parsedCurrentHp = parseNumber(rawCurrentHp);
+
+                        const resolvedMaxHp =
+                            parsedMaxHp ??
+                            storedMaxHp ??
+                            parsedCurrentHp ??
+                            undefined;
+                        let resolvedCurrentHp =
+                            parsedCurrentHp ??
+                            storedCurrentHp ??
+                            resolvedMaxHp ??
+                            undefined;
+
+                        if (
+                            resolvedCurrentHp !== undefined &&
+                            resolvedMaxHp !== undefined &&
+                            resolvedCurrentHp > resolvedMaxHp
+                        ) {
+                            resolvedCurrentHp = resolvedMaxHp;
+                        }
+
                         player.ac = ac;
-                        player.hp = hp;
+                        if (resolvedMaxHp !== undefined) {
+                            player.hp = resolvedMaxHp;
+                            player.max_hp = resolvedMaxHp;
+                        }
+                        if (resolvedCurrentHp !== undefined) {
+                            player.currentHP = resolvedCurrentHp;
+                        } else if (
+                            player.currentHP === undefined &&
+                            player.hp !== undefined
+                        ) {
+                            player.currentHP = player.hp;
+                        }
                         player.modifier = modifier;
                         player.level = level;
                         player.name = name ? name : player.name;
@@ -444,6 +500,7 @@ export default class InitiativeTracker extends Plugin {
                                     creature,
                                     change: {
                                         set_max_hp: player.hp,
+                                        set_hp: player.currentHP,
                                         ac: player.ac
                                     }
                                 });
@@ -667,6 +724,20 @@ export default class InitiativeTracker extends Plugin {
             return;
         }
 
+        if (player.currentHP === undefined && typeof player.hp === "number") {
+            player.currentHP = player.hp;
+        }
+        if (
+            player.currentHP !== undefined &&
+            player.hp !== undefined &&
+            player.currentHP > player.hp
+        ) {
+            player.currentHP = player.hp;
+        }
+        if (player.hp !== undefined) {
+            player.max_hp = player.hp;
+        }
+
         const creature = this.playerCreatures.get(existing.name);
         creature.update(player);
 
@@ -688,12 +759,38 @@ export default class InitiativeTracker extends Plugin {
     }
 
     async savePlayer(player: HomebrewCreature) {
+        if (player.currentHP === undefined && typeof player.hp === "number") {
+            player.currentHP = player.hp;
+        }
+        if (
+            player.currentHP !== undefined &&
+            player.hp !== undefined &&
+            player.currentHP > player.hp
+        ) {
+            player.currentHP = player.hp;
+        }
+        if (player.hp !== undefined) {
+            player.max_hp = player.hp;
+        }
         this.data.players.push(player);
         this.playerCreatures.set(player.name, Creature.from(player));
         await this.saveSettings();
     }
     async savePlayers(...players: HomebrewCreature[]) {
         for (let monster of players) {
+            if (monster.currentHP === undefined && typeof monster.hp === "number") {
+                monster.currentHP = monster.hp;
+            }
+            if (
+                monster.currentHP !== undefined &&
+                monster.hp !== undefined &&
+                monster.currentHP > monster.hp
+            ) {
+                monster.currentHP = monster.hp;
+            }
+            if (monster.hp !== undefined) {
+                monster.max_hp = monster.hp;
+            }
             this.data.players.push(monster);
             this.playerCreatures.set(monster.name, Creature.from(monster));
         }
