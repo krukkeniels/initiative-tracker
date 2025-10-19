@@ -415,14 +415,17 @@ export default class InitiativeTracker extends Plugin {
                 }
             }
             this.registerEvent(
-                this.app.metadataCache.on("changed", (file) => {
+                this.app.metadataCache.on("changed", async (file) => {
+                    console.log("[Frontmatter Sync] File changed:", file instanceof TFile ? file.path : "not a TFile");
                     if (!(file instanceof TFile)) return;
                     const players = this.data.players.filter(
                         (p) => p.path == file.path
                     );
+                    console.log("[Frontmatter Sync] Matching players:", players.length, players.map(p => p.name));
                     if (!players.length) return;
                     const frontmatter: FrontMatterCache =
                         this.app.metadataCache.getFileCache(file)?.frontmatter;
+                    console.log("[Frontmatter Sync] Frontmatter:", frontmatter ? "found" : "not found");
                     if (!frontmatter) return;
                     const parseNumber = (value: unknown): number | undefined => {
                         if (value === null || value === undefined || value === "") {
@@ -435,11 +438,23 @@ export default class InitiativeTracker extends Plugin {
                         const { ac, hp, modifier, level, name, image, image_url } = frontmatter;
                         const rawMaxHp =
                             frontmatter["max_hp"] ??
-                            frontmatter["maxHp"];
+                            frontmatter["maxHp"] ??
+                            frontmatter["hp_max"];
                         const rawCurrentHp =
                             hp ??
                             frontmatter["current_hp"] ??
                             frontmatter["currentHP"];
+
+                        console.log("[Frontmatter Sync] Raw HP values from frontmatter:", {
+                            hp: hp,
+                            max_hp: frontmatter["max_hp"],
+                            maxHp: frontmatter["maxHp"],
+                            hp_max: frontmatter["hp_max"],
+                            current_hp: frontmatter["current_hp"],
+                            currentHP: frontmatter["currentHP"],
+                            resolvedMaxHp: rawMaxHp,
+                            resolvedCurrentHp: rawCurrentHp
+                        });
 
                         const storedMaxHp = parseNumber(player.hp);
                         const storedCurrentHp = parseNumber(player.currentHP);
@@ -487,26 +502,41 @@ export default class InitiativeTracker extends Plugin {
                         player.image = image;
                         player.image_url = image_url;
 
+                        console.log("[Frontmatter Sync] Updated player:", player.name, {
+                            maxHP: player.hp,
+                            currentHP: player.currentHP,
+                            ac: player.ac
+                        });
+
                         this.playerCreatures.set(
                             player.name,
                             Creature.from(player)
                         );
+                        console.log("[Frontmatter Sync] Tracker view exists:", !!this.view);
                         if (this.view) {
                             const creature = tracker
                                 .getOrderedCreatures()
                                 .find((c) => c.name == player.name);
+                            console.log("[Frontmatter Sync] Creature in tracker:", creature ? creature.name : "not found");
                             if (creature) {
+                                console.log("[Frontmatter Sync] Updating creature in tracker with HP:", {
+                                    set_max_hp: player.hp,
+                                    set_hp: player.currentHP
+                                });
                                 tracker.updateCreatures({
                                     creature,
                                     change: {
                                         set_max_hp: player.hp,
                                         set_hp: player.currentHP,
-                                        ac: player.ac
+                                        ac: player.ac,
+                                        image: player.image,
+                                        image_url: player.image_url
                                     }
                                 });
                             }
                         }
                     }
+                    await this.saveSettings();
                 })
             );
             this.registerEvent(

@@ -54,6 +54,9 @@ export interface InitiativeTrackerData {
     imageStyle: string;
     imageGrimness: number;
     backgroundImagesFolder: string;
+
+    // Turn Timer
+    turnTimerThreshold: number;
 }
 export interface InputValidate {
     input: HTMLInputElement;

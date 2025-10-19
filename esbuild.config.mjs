@@ -32,7 +32,7 @@ const parameters = {
     minify: prod,
     plugins: [
         sveltePlugin({
-            compilerOptions: { css: "injected" },
+            compilerOptions: { css: true },
             preprocess: sveltePreprocess(),
             filterWarnings: (warning) => {
                 if (warning.code.toLowerCase().startsWith("a11y-")) {

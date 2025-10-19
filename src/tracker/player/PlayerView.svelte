@@ -11,7 +11,7 @@
     import { getHpIconSvg } from "src/utils/hp-icons";
 
     import { tracker } from "../stores/tracker";
-    const { state, ordered, data, backgroundImageUrl, round } = tracker;
+    const { state, ordered, data, backgroundImageUrl, round, turnStartTime } = tracker;
 
     export let plugin: InitiativeTracker;
 
@@ -102,6 +102,31 @@
         if (resizeObserver) {
             resizeObserver.disconnect();
         }
+        if (timerInterval) {
+            clearInterval(timerInterval);
+        }
+    });
+
+    // Turn timer
+    let elapsedSeconds = 0;
+    let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+    // Format elapsed time as MM:SS
+    const formatTime = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Update elapsed time every second
+    onMount(() => {
+        timerInterval = setInterval(() => {
+            if ($turnStartTime && $state) {
+                elapsedSeconds = Math.floor((Date.now() - $turnStartTime) / 1000);
+            } else {
+                elapsedSeconds = 0;
+            }
+        }, 100); // Update every 100ms for smooth display
     });
 
     // Track active index for carousel sliding
@@ -250,6 +275,19 @@
                     class:active={item.isActive && $state}
                     data-creature-id={creature.id}
                 >
+                    <!-- Turn Timer (Top-left corner, only on active card and when threshold exceeded) -->
+                    {#if item.isActive && $state && $turnStartTime && (($data.turnTimerThreshold ?? 120) === 0 || elapsedSeconds >= ($data.turnTimerThreshold ?? 120))}
+                        <div class="turn-timer" class:warning={elapsedSeconds >= ($data.turnTimerThreshold ?? 120) && ($data.turnTimerThreshold ?? 120) > 0}>
+                            <div class="timer-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </div>
+                            <div class="timer-text">{formatTime(elapsedSeconds)}</div>
+                        </div>
+                    {/if}
+
                     <!-- Health Badge (Top-right corner) -->
                     <div class="health-badge {getHpStatus(creature.hp, creature.max).toLowerCase()}">
                         {#if creature.player && $data.diplayPlayerHPValues}
@@ -486,6 +524,74 @@
                 0 0 50px rgba(251, 191, 36, 0.8),
                 0 12px 30px rgba(0, 0, 0, 0.4);
         }
+    }
+
+    /* === TURN TIMER (Top-left corner) === */
+    .turn-timer {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: rgba(251, 191, 36, 0.95);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        border: 2px solid rgba(251, 191, 36, 0.6);
+        animation: timerPulse 2s ease-in-out infinite;
+        transition: all 0.3s ease;
+    }
+
+    .turn-timer.warning {
+        background: rgba(220, 38, 38, 0.95);
+        border: 2px solid rgba(220, 38, 38, 0.7);
+        animation: timerWarningPulse 1s ease-in-out infinite;
+    }
+
+    @keyframes timerPulse {
+        0%, 100% {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        50% {
+            box-shadow: 0 4px 16px rgba(251, 191, 36, 0.6);
+        }
+    }
+
+    @keyframes timerWarningPulse {
+        0%, 100% {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            transform: scale(1);
+        }
+        50% {
+            box-shadow: 0 4px 20px rgba(220, 38, 38, 0.8);
+            transform: scale(1.05);
+        }
+    }
+
+    .timer-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(0, 0, 0, 0.9);
+    }
+
+    .timer-icon svg {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+    }
+
+    .timer-text {
+        font-size: 1.1em;
+        font-weight: 700;
+        color: rgba(0, 0, 0, 0.9);
+        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.05em;
     }
 
     /* === HEALTH BADGE (Top-right corner) === */

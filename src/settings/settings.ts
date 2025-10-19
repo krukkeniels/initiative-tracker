@@ -280,6 +280,36 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
             });
 
         new Setting(additionalContainer)
+            .setName("Turn Timer Threshold")
+            .setDesc(
+                createFragment((e) => {
+                    const threshold = this.plugin.data.turnTimerThreshold ?? 120;
+                    const formatTime = (seconds: number): string => {
+                        if (seconds === 0) return "Always show";
+                        const mins = Math.floor(seconds / 60);
+                        const secs = seconds % 60;
+                        if (mins === 0) return `${secs}s`;
+                        if (secs === 0) return `${mins}m`;
+                        return `${mins}m ${secs}s`;
+                    };
+                    e.createSpan({
+                        text: `Timer appears in Player View after ${formatTime(threshold)}. Set to 0 to always show timer.`
+                    });
+                })
+            )
+            .addSlider((s) => {
+                s.setLimits(0, 600, 30);
+                s.setValue(this.plugin.data.turnTimerThreshold ?? 120);
+                s.setDynamicTooltip();
+                s.onChange(async (v) => {
+                    this.plugin.data.turnTimerThreshold = v;
+                    await this.plugin.saveSettings();
+                    // Refresh the description to show new formatted time
+                    this.display();
+                });
+            });
+
+        new Setting(additionalContainer)
             .setName("Log Battles")
             .setDesc(
                 "Actions taken during battle will be logged to the specified log folder."

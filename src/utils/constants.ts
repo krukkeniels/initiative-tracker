@@ -85,7 +85,8 @@ export const DEFAULT_SETTINGS: InitiativeTrackerData = {
     openaiApiKey: "",
     imageStyle: "fantasy-art",
     imageGrimness: 50,
-    backgroundImagesFolder: "initiative-tracker/backgrounds"
+    backgroundImagesFolder: "initiative-tracker/backgrounds",
+    turnTimerThreshold: 120
 };
 
 export const DECIMAL_TO_VULGAR_FRACTION: Record<string, string> = {

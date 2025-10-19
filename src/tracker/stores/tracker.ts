@@ -47,6 +47,8 @@ type CreatureUpdate = {
     //this is so dirty
     set_hp?: number;
     set_max_hp?: number;
+    image?: string;
+    image_url?: string;
 };
 type CreatureUpdates = { creature: Creature; change: CreatureUpdate };
 const modifier = Platform.isMacOS ? "Meta" : "Control";
@@ -63,15 +65,19 @@ function createTracker() {
 
     const $round = writable<number>(1);
     const $state = writable<boolean>(false);
+    const $turnStartTime = writable<number | null>(null);
     const setState = (state: boolean) => {
         $state.set(state);
         if (state) {
+            // Reset turn start time when combat starts
+            $turnStartTime.set(Date.now());
             if (!_logger?.logging) {
+                const orderedCreatures = get(ordered);
                 _logger
                     ?.new({
                         name: get($name)!,
-                        players: current_order.filter((c) => c.player),
-                        creatures: current_order.filter((c) => !c.player),
+                        players: orderedCreatures.filter((c) => c.player),
+                        creatures: orderedCreatures.filter((c) => !c.player),
                         round: get($round)
                     })
                     .then(() => {
@@ -81,11 +87,16 @@ function createTracker() {
                 _logger?.log(`Combat re-started`);
             }
         } else {
+            // Clear turn start time when combat stops
+            $turnStartTime.set(null);
             _logger?.log("Combat stopped");
         }
         updateAndSave((creatures) => {
             if (creatures.length && !creatures.find((c) => c.active)) {
-                current_order[0].active = true;
+                const orderedCreatures = get(ordered);
+                if (orderedCreatures.length > 0) {
+                    orderedCreatures[0].active = true;
+                }
             }
             return creatures;
         });
@@ -101,22 +112,35 @@ function createTracker() {
     let _settings: InitiativeTrackerData | null;
     
     const condensed = derived(creatures, (values) => {
+        // Create a shallow copy to avoid mutating the input
+        const result = [...values];
+
         if (_settings?.condense) {
-            values.forEach((creature, _, arr) => {
-                const equiv = arr.filter((c) => equivalent(c, creature));
+            const processed = new Set<string>();
+
+            result.forEach((creature) => {
+                // Skip if already processed or static
+                if (processed.has(creature.id) || creature.static) return;
+
+                // Find all equivalent creatures
+                const equiv = result.filter((c) => equivalent(c, creature));
                 const initiatives = equiv.map((i) => i.initiative);
                 const initiative =
                     initiatives[Math.floor(Math.random() * initiatives.length)];
+
+                // Update initiative for all equivalent creatures
                 equiv.forEach((eq) => {
-                    if (eq.static) return;
-                    eq.initiative = initiative;
+                    if (!eq.static) {
+                        eq.initiative = initiative;
+                        processed.add(eq.id);
+                    }
                 });
             });
         }
-        return values;
+
+        return result;
     });
 
-    let current_order: Creature[] = [];
     const ordered = derived([condensed, data], ([values, data]) => {
         const sort = [...values];
         sort.sort((a, b) => {
@@ -129,17 +153,19 @@ function createTracker() {
                 ? b.initiative - a.initiative
                 : a.initiative - b.initiative;
             }
-            
+
             if (
-                a.manualOrder !== null && a.manualOrder !== undefined && 
-                b.manualOrder !== null && b.manualOrder !== undefined && 
+                a.manualOrder !== null && a.manualOrder !== undefined &&
+                b.manualOrder !== null && b.manualOrder !== undefined &&
                 a.manualOrder !== b.manualOrder
             ) {
                 const aOrder = a.manualOrder || 0;
                 const bOrder = b.manualOrder || 0;
                 return aOrder - bOrder;
             }
-            
+
+            if (!_settings) return 0;
+
             switch (_settings.resolveTies) {
                 case RESOLVE_TIES.random:
                     return Math.random() < 0.5 ? 1 : -1;
@@ -153,9 +179,8 @@ function createTracker() {
                         return aPlayer - bPlayer
                     }
             }
-            
+
         });
-        current_order = sort;
         return sort;
     });
 
@@ -187,13 +212,14 @@ function createTracker() {
                     change.hp = Math.min(0, remaining);
                 }
                 // Clamp HP at 0 if clamp is enabled in settings
-                if (_settings.clamp && creature.hp + change.hp < 0) {
+                if (_settings?.clamp && creature.hp + change.hp < 0) {
                     change.hp = -creature.hp;
                 }
                 // Handle overflow healing according to settings
                 if (
                     change.hp > 0 &&
-                    change.hp + creature.hp > creature.current_max
+                    change.hp + creature.hp > creature.current_max &&
+                    _settings
                 ) {
                     switch (_settings.hpOverflow) {
                         case OVERFLOW_TYPE.ignore:
@@ -214,7 +240,7 @@ function createTracker() {
                     }
                 }
                 creature.hp += change.hp;
-                if (_settings.autoStatus && creature.hp <= 0) {
+                if (_settings?.autoStatus && creature.hp <= 0) {
                     const unc = _settings.statuses.find(
                         (s) => s.id == _settings.unconsciousId
                     );
@@ -228,7 +254,7 @@ function createTracker() {
                 );
                 if (
                     creature.hp >= creature.current_max &&
-                    _settings.hpOverflow !== OVERFLOW_TYPE.current
+                    _settings?.hpOverflow !== OVERFLOW_TYPE.current
                 ) {
                     creature.hp = creature.current_max;
                 }
@@ -244,7 +270,7 @@ function createTracker() {
             }
             if (change.temp) {
                 let baseline = 0;
-                if (_settings.additiveTemp) {
+                if (_settings?.additiveTemp) {
                     baseline = creature.temp;
                 }
                 if (change.temp > 0) {
@@ -285,7 +311,13 @@ function createTracker() {
                     }`
                 );
             }
-            if (!creatures.includes(creature)) {
+            if ("image" in change) {
+                creature.image = change.image!;
+            }
+            if ("image_url" in change) {
+                creature.image_url = change.image_url!;
+            }
+            if (!creatures.some(c => c.id === creature.id)) {
                 creatures.push(creature);
             }
         }
@@ -453,6 +485,12 @@ function createTracker() {
                     if ("enabled" in change) {
                         creature.enabled = change.enabled;
                     }
+                    if ("image" in change) {
+                        creature.image = change.image;
+                    }
+                    if ("image_url" in change) {
+                        creature.image_url = change.image_url;
+                    }
                     if (Array.isArray(change.status) && change.status?.length) {
                         for (const status of change.status) {
                             if (typeof status == "string") {
@@ -596,6 +634,8 @@ function createTracker() {
 
         round: $round,
 
+        turnStartTime: $turnStartTime,
+
         name: $name,
 
         sort: descending,
@@ -618,27 +658,30 @@ function createTracker() {
 
         goToNext: () =>
             updateAndSave((creatures) => {
-                const current = current_order.findIndex((c) => {
-                    return c.active;
-                });
+                const orderedCreatures = get(ordered);
+                if (orderedCreatures.length === 0) return creatures;
+
+                const current = orderedCreatures.findIndex((c) => c.active);
                 if (current == -1) {
-                    current_order[0].active = true;
+                    if (orderedCreatures.length > 0) {
+                        orderedCreatures[0].active = true;
+                    }
                 } else {
                     let next;
                     let nextIndex = current;
                     do {
                         nextIndex =
-                            (((nextIndex + 1) % current_order.length) +
-                                current_order.length) %
-                            current_order.length;
-                        next = current_order[nextIndex];
+                            (((nextIndex + 1) % orderedCreatures.length) +
+                                orderedCreatures.length) %
+                            orderedCreatures.length;
+                        next = orderedCreatures[nextIndex];
                         if (nextIndex == current) {
                             break;
                         }
                     } while (!next.enabled);
 
                     if (next) {
-                        current_order[current].active = false;
+                        orderedCreatures[current].active = false;
                         if (nextIndex < current) {
                             const round = get($round) + 1;
                             $round.set(round);
@@ -655,35 +698,41 @@ function createTracker() {
                         }
                         _logger?.log("#####", `${next.getName()}'s turn`);
                         next.active = true;
+                        // Reset turn start time for the new active creature
+                        $turnStartTime.set(Date.now());
                     }
                 }
-                return creatures;
+                // Return new array reference to ensure reactivity
+                return [...creatures];
             }),
         goToPrevious: () =>
             updateAndSave((creatures) => {
-                const current = current_order.findIndex((c) => {
-                    return c.active;
-                });
+                const orderedCreatures = get(ordered);
+                if (orderedCreatures.length === 0) return creatures;
+
+                const current = orderedCreatures.findIndex((c) => c.active);
                 if (current == 0 && get($round) == 1) return creatures;
 
                 if (current == -1) {
-                    current_order[0].active = true;
+                    if (orderedCreatures.length > 0) {
+                        orderedCreatures[0].active = true;
+                    }
                 } else {
                     let prev;
                     let prevIndex = current;
                     do {
                         prevIndex =
-                            (((prevIndex - 1) % current_order.length) +
-                                current_order.length) %
-                            current_order.length;
-                        prev = current_order[prevIndex];
+                            (((prevIndex - 1) % orderedCreatures.length) +
+                                orderedCreatures.length) %
+                            orderedCreatures.length;
+                        prev = orderedCreatures[prevIndex];
                         if (prevIndex == current) {
                             break;
                         }
                     } while (!prev.enabled);
 
                     if (prev) {
-                        current_order[current].active = false;
+                        orderedCreatures[current].active = false;
                         if (prevIndex > current) {
                             const round = get($round) - 1;
                             $round.set(round);
@@ -698,9 +747,12 @@ function createTracker() {
                         }
                         _logger?.log("#####", `${prev.getName()}'s turn`);
                         prev.active = true;
+                        // Reset turn start time for the new active creature
+                        $turnStartTime.set(Date.now());
                     }
                 }
-                return creatures;
+                // Return new array reference to ensure reactivity
+                return [...creatures];
             }),
 
         ordered,
@@ -720,8 +772,9 @@ function createTracker() {
                 if (!_settings.condense) {
                     toRoll.push(...items);
                 } else {
+                    const orderedCreatures = get(ordered);
                     for (const creature of items) {
-                        const existing = current_order.find((c) =>
+                        const existing = orderedCreatures.find((c) =>
                             equivalent(c, creature)
                         );
                         if (existing) {
@@ -741,7 +794,8 @@ function createTracker() {
             }),
         remove: (...items: Creature[]) =>
             updateAndSave((creatures) => {
-                creatures = creatures.filter((m) => !items.includes(m));
+                const idsToRemove = new Set(items.map(c => c.id));
+                creatures = creatures.filter((m) => !idsToRemove.has(m.id));
 
                 _logger?.log(
                     _logger?.join(items.map((c) => c.name)),
@@ -751,8 +805,11 @@ function createTracker() {
             }),
         replace: (old: Creature, replacer: Creature) => {
             updateAndSave((creatures) => {
-                creatures.splice(creatures.indexOf(old), 1, replacer);
-                setNumbers(creatures);
+                const index = creatures.findIndex(c => c.id === old.id);
+                if (index !== -1) {
+                    creatures.splice(index, 1, replacer);
+                    setNumbers(creatures);
+                }
                 return creatures;
             });
         },
@@ -765,6 +822,10 @@ function createTracker() {
             }),
         new: (plugin: InitiativeTracker, state?: InitiativeViewState) =>
             updateAndSave((creatures) => {
+                console.log("[Tracker.new] Called with state:", state ? "defined" : "undefined");
+                console.log("[Tracker.new] Current creatures count:", creatures.length);
+                console.log("[Tracker.new] Creatures:", creatures.map(c => ({ name: c.name, player: c.player })));
+
                 $round.set(state?.round ?? 1);
                 $state.set(state?.state ?? false);
                 $name.set(state?.name ?? null);
@@ -774,7 +835,11 @@ function createTracker() {
                     /**
                      * New encounter button was clicked, only maintain the players.
                      */
+                    console.log("[Tracker.new] Filtering to keep only players");
+                    const beforeCount = creatures.length;
                     creatures = creatures.filter((c) => c.player);
+                    console.log("[Tracker.new] After filter: " + creatures.length + " creatures (was " + beforeCount + ")");
+                    console.log("[Tracker.new] Filtered creatures:", creatures.map(c => ({ name: c.name, player: c.player })));
                 } else {
                     /**
                      * Encounter is being started. Keep any pre-existing players that are incoming.
@@ -836,6 +901,7 @@ function createTracker() {
                     _logger.logging = false;
                     $logFile.set(null);
                 }
+                console.log("[Tracker.new] Returning creatures array with " + creatures.length + " creatures");
                 return creatures;
             }),
         reset: () =>
@@ -962,21 +1028,22 @@ function createTracker() {
 
         moveUp: (creature: Creature) => {
             updateAndSave((creatures) => {
-                const currentIndex = current_order.indexOf(creature);
+                const orderedCreatures = get(ordered);
+                const currentIndex = orderedCreatures.findIndex(c => c.id === creature.id);
                 if (currentIndex <= 0) return creatures; // Already at the top or not found
 
-                const prevCreature = current_order[currentIndex - 1];
+                const prevCreature = orderedCreatures[currentIndex - 1];
 
                 // Set initiative to match the previous creature (create a tie)
                 creature.initiative = prevCreature.initiative;
                 logNewInitiative(creature);
 
                 // Swap positions in the ordered array
-                [current_order[currentIndex - 1], current_order[currentIndex]] =
-                [current_order[currentIndex], current_order[currentIndex - 1]];
+                [orderedCreatures[currentIndex - 1], orderedCreatures[currentIndex]] =
+                [orderedCreatures[currentIndex], orderedCreatures[currentIndex - 1]];
 
                 // Reassign manualOrder to ALL creatures based on new positions
-                current_order.forEach((c, i) => {
+                orderedCreatures.forEach((c, i) => {
                     c.manualOrder = i;
                 });
 
@@ -987,21 +1054,22 @@ function createTracker() {
 
         moveDown: (creature: Creature) => {
             updateAndSave((creatures) => {
-                const currentIndex = current_order.indexOf(creature);
-                if (currentIndex === -1 || currentIndex >= current_order.length - 1) return creatures; // Already at bottom or not found
+                const orderedCreatures = get(ordered);
+                const currentIndex = orderedCreatures.findIndex(c => c.id === creature.id);
+                if (currentIndex === -1 || currentIndex >= orderedCreatures.length - 1) return creatures; // Already at bottom or not found
 
-                const nextCreature = current_order[currentIndex + 1];
+                const nextCreature = orderedCreatures[currentIndex + 1];
 
                 // Set initiative to match the next creature (create a tie)
                 creature.initiative = nextCreature.initiative;
                 logNewInitiative(creature);
 
                 // Swap positions in the ordered array
-                [current_order[currentIndex], current_order[currentIndex + 1]] =
-                [current_order[currentIndex + 1], current_order[currentIndex]];
+                [orderedCreatures[currentIndex], orderedCreatures[currentIndex + 1]] =
+                [orderedCreatures[currentIndex + 1], orderedCreatures[currentIndex]];
 
                 // Reassign manualOrder to ALL creatures based on new positions
-                current_order.forEach((c, i) => {
+                orderedCreatures.forEach((c, i) => {
                     c.manualOrder = i;
                 });
 
