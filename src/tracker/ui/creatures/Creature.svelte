@@ -18,11 +18,11 @@
 
     export let creature: Creature;
     $: statuses = creature.status;
+    $: creatureName = creature.player ? creature.name : creature.getName();
 
     let showHPPopup = false;
     let hpButtonElement: HTMLElement;
 
-    const name = () => creature.getName();
     const statblockLink = () => creature.getStatblockLink();
     const hiddenIcon = (div: HTMLElement) => {
         setIcon(div, HIDDEN);
@@ -172,9 +172,9 @@
             <div class="centered-icon" use:friendlyIcon />
         {/if}
         {#if creature.player}
-            <strong class="name player">{creature.name}</strong>
+            <strong class="name player">{creatureName}</strong>
         {:else}
-            <span class="name">{name()}</span>
+            <span class="name">{creatureName}</span>
         {/if}
     </div>
     <!-- svelte-ignore a11y-click-events-have-key-events -->

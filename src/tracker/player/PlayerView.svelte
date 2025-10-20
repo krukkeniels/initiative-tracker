@@ -15,11 +15,6 @@
 
     export let plugin: InitiativeTracker;
 
-    // Carousel state
-    let carouselContainer: HTMLElement;
-    let visibleCardCount = 3; // Default
-    let resizeObserver: ResizeObserver;
-
     const hpIcon = (node: HTMLElement) => {
         setIcon(node, HP);
     };
@@ -78,30 +73,7 @@
 
     const name = (creature: Creature) => creature.getName();
 
-    // Calculate visible card count based on viewport
-    onMount(() => {
-        const calculateVisibleCards = () => {
-            if (carouselContainer) {
-                const cardWidth = 300; // 280px card + 20px gap
-                const containerWidth = carouselContainer.offsetWidth;
-                visibleCardCount = Math.max(1, Math.floor(containerWidth / cardWidth) + 1);
-            }
-        };
-
-        // Initial calculation
-        calculateVisibleCards();
-
-        // Watch for resize
-        resizeObserver = new ResizeObserver(calculateVisibleCards);
-        if (carouselContainer) {
-            resizeObserver.observe(carouselContainer);
-        }
-    });
-
     onDestroy(() => {
-        if (resizeObserver) {
-            resizeObserver.disconnect();
-        }
         if (timerInterval) {
             clearInterval(timerInterval);
         }
@@ -118,6 +90,25 @@
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // Format encounter time based on rounds
+    const formatEncounterTime = (totalSeconds: number): string => {
+        if (totalSeconds < 60) {
+            return `${totalSeconds}s`;
+        }
+        const hours = Math.floor(totalSeconds / 3600);
+        const mins = Math.floor((totalSeconds % 3600) / 60);
+        const secs = totalSeconds % 60;
+
+        if (hours > 0) {
+            return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        } else {
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+    };
+
+    // Calculate total encounter time in seconds
+    $: encounterTimeSeconds = $round * ($data.secondsPerRound ?? 6);
+
     // Update elapsed time every second
     onMount(() => {
         timerInterval = setInterval(() => {
@@ -129,57 +120,11 @@
         }, 100); // Update every 100ms for smooth display
     });
 
-    // Track active index for carousel sliding
-    $: activeCreatureIndex = (() => {
-        if (activeAndVisible.length === 0) return -1;
-        return activeAndVisible.findIndex(c => amIActive(c) && $state);
+    // Get active creature for the card display
+    $: activeCreature = (() => {
+        if (activeAndVisible.length === 0 || !$state) return null;
+        return activeAndVisible.find(c => amIActive(c));
     })();
-
-    // Calculate carousel offset for smooth sliding
-    const CARD_WIDTH = 280;
-    const CARD_GAP = 20;
-    const CARD_TOTAL_WIDTH = CARD_WIDTH + CARD_GAP;
-
-    // Fixed number of buffer cards before the active creature
-    const BUFFER_BEFORE = 1;
-
-    // Simple infinite carousel: always render with active creature at a fixed position
-    $: displayCreatures = (() => {
-        if (activeAndVisible.length === 0) return [];
-
-        const totalCreatures = activeAndVisible.length;
-        const activeIndex = activeCreatureIndex === -1 ? 0 : activeCreatureIndex;
-
-        console.log("[PlayerView] Generating displayCreatures", {
-            totalCreatures,
-            activeIndex,
-            visibleCardCount
-        });
-
-        const result = [];
-
-        // Render enough cards: buffer before + active + visible after + buffer
-        const totalToRender = BUFFER_BEFORE + visibleCardCount + BUFFER_BEFORE;
-
-        // Start from (active - BUFFER_BEFORE), wrap around using modulo
-        for (let i = 0; i < totalToRender; i++) {
-            const offset = i - BUFFER_BEFORE; // Relative to active (-1, 0, 1, 2, ...)
-            const creatureIndex = ((activeIndex + offset) % totalCreatures + totalCreatures) % totalCreatures;
-            const creature = activeAndVisible[creatureIndex];
-
-            result.push({
-                creature,
-                displayId: `creature-${creature.id}`,
-                isActive: i === BUFFER_BEFORE && activeCreatureIndex !== -1  // Active is at position BUFFER_BEFORE
-            });
-        }
-
-        console.log("[PlayerView] Rendered creatures:", result.map(r => r.creature.getName()));
-        return result;
-    })();
-
-    // Offset to keep active creature at the left edge (accounting for buffer)
-    $: carouselOffset = -BUFFER_BEFORE * CARD_TOTAL_WIDTH;
     const friendIcon = (node: HTMLElement) => {
         setIcon(node, FRIENDLY);
     };
@@ -198,6 +143,24 @@
     };
     const swordIcon = (node: HTMLElement) => {
         setIcon(node, "swords");
+    };
+
+    // Helper to detect if a string starts with an emoji
+    const isEmoji = (str: string | undefined): boolean => {
+        if (!str || str.length === 0) return false;
+
+        // Emoji regex pattern - matches most common emojis
+        const emojiRegex = /^[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}\u{1F3FB}-\u{1F3FF}]/u;
+        return emojiRegex.test(str);
+    };
+
+    // Helper to get the first emoji from a string
+    const getFirstEmoji = (str: string | undefined): string => {
+        if (!str) return "";
+
+        // Match the first emoji (including skin tone modifiers and ZWJ sequences)
+        const emojiMatch = str.match(/[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}][\p{Emoji_Modifier}]*/u);
+        return emojiMatch ? emojiMatch[0] : str.charAt(0);
     };
 
     // Helper to convert vault paths to resource URLs
@@ -240,20 +203,6 @@
         }
     };
 
-    // Debug helper for template logging
-    const logCreatureImage = (creature: Creature) => {
-        const hasImage = !!(creature.image || creature.image_url);
-        const imageSrc = getImageUrl(creature.image || creature.image_url);
-        console.log(`[PlayerView RENDER] ${creature.getName()}:`, {
-            hasImage,
-            image: creature.image,
-            image_url: creature.image_url,
-            finalSrc: imageSrc,
-            conditionResult: hasImage
-        });
-        return true; // Always return true so it doesn't affect rendering
-    };
-
 </script>
 
 <div class="player-view-container" transition:fade>
@@ -263,129 +212,136 @@
         <div class="background-overlay"></div>
     {/if}
 
-    <!-- LEFT PANE: Detail Carousel -->
-    <div class="carousel-container" bind:this={carouselContainer}>
-        <div class="carousel-track" style="transform: translateX({carouselOffset}px)">
-            {#each displayCreatures as item (item.displayId)}
-                {@const creature = item.creature}
-                {@const _ = logCreatureImage(creature)}
-                {@const imageUrl = getImageUrl(creature.image || creature.image_url)}
-                <div
-                    class="detail-card creature-type-{getCreatureType(creature)}"
-                    class:active={item.isActive && $state}
-                    data-creature-id={creature.id}
-                >
-                    <!-- Turn Timer (Top-left corner, only on active card and when threshold exceeded) -->
-                    {#if item.isActive && $state && $turnStartTime && (($data.turnTimerThreshold ?? 120) === 0 || elapsedSeconds >= ($data.turnTimerThreshold ?? 120))}
-                        <div class="turn-timer" class:warning={elapsedSeconds >= ($data.turnTimerThreshold ?? 120) && ($data.turnTimerThreshold ?? 120) > 0}>
-                            <div class="timer-icon">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <polyline points="12 6 12 12 16 14"></polyline>
-                                </svg>
-                            </div>
-                            <div class="timer-text">{formatTime(elapsedSeconds)}</div>
+    <!-- LEFT PANE: Active and Upcoming Cards -->
+    <div class="cards-container">
+        <!-- Round Header -->
+        {#if $state}
+            <div class="round-header">
+                <div class="round-number">ROUND {$round}</div>
+                <div class="encounter-time">{formatEncounterTime(encounterTimeSeconds)} elapsed</div>
+            </div>
+        {/if}
+
+        <!-- Active Creature Card -->
+        {#if activeCreature}
+            {@const creature = activeCreature}
+            {@const imageUrl = getImageUrl(creature.image || creature.image_url)}
+            <div
+                class="detail-card active-card creature-type-{getCreatureType(creature)}"
+                data-creature-id={creature.id}
+            >
+                <!-- Turn Timer (Top-left corner, only when threshold exceeded) -->
+                {#if $state && $turnStartTime && (($data.turnTimerThreshold ?? 120) === 0 || elapsedSeconds >= ($data.turnTimerThreshold ?? 120))}
+                    <div class="turn-timer" class:warning={elapsedSeconds >= ($data.turnTimerThreshold ?? 120) && ($data.turnTimerThreshold ?? 120) > 0}>
+                        <div class="timer-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <div class="timer-text">{formatTime(elapsedSeconds)}</div>
+                    </div>
+                {/if}
+
+                <!-- Health Badge (Top-right corner) -->
+                <div class="health-badge {getHpStatus(creature.hp, creature.max).toLowerCase()}">
+                    {#if creature.player && $data.diplayPlayerHPValues}
+                        <div class="hp-text">{@html creature.hpDisplay}</div>
+                    {:else}
+                        {@const hpIcon = getHpIcon(creature)}
+                        <div class="health-icons">
+                            {#if hpIcon === "skull"}
+                                <span use:skullIcon />
+                            {:else}
+                                <span class="hp-icon">{@html getHpIconSvg(hpIcon)}</span>
+                            {/if}
+                        </div>
+                    {/if}
+                </div>
+
+                <!-- Image Container -->
+                <div class="image-container">
+                    {#if imageUrl}
+                        <img
+                            src={imageUrl}
+                            alt={name(creature)}
+                            class="creature-image"
+                            on:error={(e) => console.error(`[PlayerView] Image failed to load for ${creature.getName()}:`, imageUrl, e)}
+                        />
+                    {:else}
+                        <div class="no-image-placeholder creature-type-{getCreatureType(creature)}">
+                            {#if creature.player}
+                                <span use:userIcon />
+                            {:else if creature.friendly}
+                                <span use:friendIcon />
+                            {:else}
+                                <span use:swordIcon />
+                            {/if}
                         </div>
                     {/if}
 
-                    <!-- Health Badge (Top-right corner) -->
-                    <div class="health-badge {getHpStatus(creature.hp, creature.max).toLowerCase()}">
-                        {#if creature.player && $data.diplayPlayerHPValues}
-                            <div class="hp-text">{@html creature.hpDisplay}</div>
-                        {:else}
-                            {@const hpIcon = getHpIcon(creature)}
-                            <div class="health-icons">
-                                {#if hpIcon === "skull"}
-                                    <span use:skullIcon />
-                                {:else}
-                                    <span class="hp-icon">{@html getHpIconSvg(hpIcon)}</span>
-                                {/if}
-                            </div>
-                        {/if}
-                    </div>
-
-                    <!-- Image Container -->
-                    <div class="image-container">
-                        {#if imageUrl}
-                            <img
-                                src={imageUrl}
-                                alt={name(creature)}
-                                class="creature-image"
-                                on:error={(e) => console.error(`[PlayerView] Image failed to load for ${creature.getName()}:`, imageUrl, e)}
-                            />
-                        {:else}
-                            <div class="no-image-placeholder creature-type-{getCreatureType(creature)}">
-                                {#if creature.player}
-                                    <span use:userIcon />
-                                {:else if creature.friendly}
-                                    <span use:friendIcon />
-                                {:else}
-                                    <span use:swordIcon />
-                                {/if}
-                            </div>
-                        {/if}
-
-                        <!-- Status Section (above name, only if statuses exist) -->
-                        {#if creature.status.size > 0}
-                            <div class="status-section">
-                                {#each [...creature.status].slice(0, 2) as status}
-                                    <span class="status-badge">
-                                        {#if status.icon}
-                                            <span class="status-icon">
-                                                {@html getConditionIconSvg(status.icon)}
+                    <!-- Conditions Section (above name, only if statuses exist) -->
+                    {#if creature.status.size > 0}
+                        <div class="conditions-container">
+                            {#each [...creature.status] as condition (condition.id)}
+                                <span class="condition-chip">
+                                    {#if condition.icon}
+                                        {#if isEmoji(condition.icon)}
+                                            <span class="condition-chip-emoji">
+                                                {getFirstEmoji(condition.icon)}
+                                            </span>
+                                        {:else}
+                                            <span class="condition-chip-icon">
+                                                {@html getConditionIconSvg(condition.icon)}
                                             </span>
                                         {/if}
-                                        <span class="status-name">{status.name}</span>
-                                    </span>
-                                {/each}
-                                {#if creature.status.size > 2}
-                                    <span class="status-badge status-more">+{creature.status.size - 2}</span>
-                                {/if}
-                            </div>
-                        {/if}
-
-                        <!-- Name Banner (overlays bottom of image) -->
-                        <div class="name-banner creature-type-{getCreatureType(creature)}">
-                            <div class="creature-name">{name(creature)}</div>
+                                    {/if}
+                                    <span class="condition-chip-name">{condition.name}</span>
+                                </span>
+                            {/each}
                         </div>
+                    {/if}
+
+                    <!-- Name Banner (overlays bottom of image) -->
+                    <div class="name-banner creature-type-{getCreatureType(creature)}">
+                        <div class="creature-name">{name(creature)}</div>
                     </div>
                 </div>
-            {/each}
-        </div>
-    </div>
-
-    <!-- BOTTOM PANE: Active Creature Condition Details -->
-    {#if displayCreatures.find(item => item.isActive)?.creature?.status.size > 0}
-        {@const activeCreature = displayCreatures.find(item => item.isActive)?.creature}
-        <div class="condition-details-section" transition:fade>
-            <div class="condition-details-header">ACTIVE CONDITIONS</div>
-            <div class="condition-cards-grid">
-                {#each [...activeCreature.status] as condition (condition.id)}
-                    <div class="condition-card creature-type-{getCreatureType(activeCreature)}">
-                        {#if condition.icon}
-                            <div class="condition-card-icon">
-                                {@html getConditionIconSvg(condition.icon)}
-                            </div>
-                        {/if}
-                        <div class="condition-card-content">
-                            <div class="condition-card-name">{condition.name}</div>
-                            <div class="condition-card-description">{condition.description}</div>
-                        </div>
-                    </div>
-                {/each}
             </div>
-        </div>
-    {/if}
+        {/if}
+    </div>
 
     <!-- RIGHT PANE: Initiative Sidebar -->
     <div class="initiative-sidebar">
-        <div class="sidebar-header">ROUND {$round}</div>
         {#each activeAndVisible as creature (creature.id)}
+            {@const imageUrl = getImageUrl(creature.image || creature.image_url)}
             <div
                 class="initiative-item creature-type-{getCreatureType(creature)}"
                 class:active={amIActive(creature) && $state}
             >
-                <span class="init-number">{creature.initiative}</span>
+                <!-- Avatar with Initiative Badge -->
+                <div class="avatar-container">
+                    {#if imageUrl}
+                        <img
+                            src={imageUrl}
+                            alt={name(creature)}
+                            class="avatar-image creature-type-{getCreatureType(creature)}"
+                            on:error={(e) => console.error(`[PlayerView] Avatar failed to load for ${creature.getName()}:`, imageUrl, e)}
+                        />
+                    {:else}
+                        <div class="avatar-placeholder creature-type-{getCreatureType(creature)}">
+                            {#if creature.player}
+                                <span use:userIcon />
+                            {:else if creature.friendly}
+                                <span use:friendIcon />
+                            {:else}
+                                <span use:swordIcon />
+                            {/if}
+                        </div>
+                    {/if}
+                    <span class="init-badge" class:active-badge={amIActive(creature) && $state}>{creature.initiative}</span>
+                </div>
+
                 <span class="init-name">{name(creature)}</span>
 
                 <!-- Health Icons -->
@@ -407,15 +363,21 @@
                 <!-- Condition Icons -->
                 {#if creature.status.size > 0}
                     <div class="sidebar-conditions">
-                        {#each [...creature.status].slice(0, 3) as status}
+                        {#each [...creature.status].slice(0, 5) as status}
                             {#if status.icon}
-                                <span class="sidebar-condition-icon" title={status.name}>
-                                    {@html getConditionIconSvg(status.icon)}
-                                </span>
+                                {#if isEmoji(status.icon)}
+                                    <span class="sidebar-condition-emoji" title={status.name}>
+                                        {getFirstEmoji(status.icon)}
+                                    </span>
+                                {:else}
+                                    <span class="sidebar-condition-icon" title={status.name}>
+                                        {@html getConditionIconSvg(status.icon)}
+                                    </span>
+                                {/if}
                             {/if}
                         {/each}
-                        {#if creature.status.size > 3}
-                            <span class="sidebar-condition-more">+{creature.status.size - 3}</span>
+                        {#if creature.status.size > 5}
+                            <span class="sidebar-condition-more">+{creature.status.size - 5}</span>
                         {/if}
                     </div>
                 {/if}
@@ -432,35 +394,58 @@
         width: 100%;
         padding: 16px;
         box-sizing: border-box;
-    }
-
-    /* === CAROUSEL === */
-    .carousel-container {
-        width: 100%;
-        height: 100%;
-        overflow: visible; /* Allow active card scale to show */
-        position: relative;
-        display: flex;
-        align-items: center;
-    }
-
-    .carousel-track {
         display: flex;
         gap: 20px;
-        padding: 30px 20px; /* More vertical padding for scaled cards */
-        overflow: visible; /* Show full cards */
-        justify-content: flex-start;
-        align-items: center;
-        width: max-content; /* Allow track to extend beyond viewport */
-        position: relative; /* For proper animation stacking context */
-        transition: transform 0.45s cubic-bezier(0.33, 1, 0.68, 1); /* Smooth carousel sliding */
-        will-change: transform; /* Optimize for transform animations */
+    }
+
+    /* === CARDS CONTAINER === */
+    .cards-container {
+        flex: 0 0 40%;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        position: relative;
+        z-index: 10;
+        overflow: visible;
+    }
+
+    /* === ROUND HEADER === */
+    .round-header {
+        text-align: center;
+        padding: 12px 16px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        border-radius: 8px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        color: rgba(255, 255, 255, 0.95);
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .round-number {
+        font-size: 1.2em;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+    }
+
+    .encounter-time {
+        font-size: 0.85em;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.75);
+        letter-spacing: 0.03em;
+    }
+
+    :global(.theme-dark) .round-header {
+        background: rgba(0, 0, 0, 0.75);
     }
 
     /* === DETAIL CARD === */
     .detail-card {
-        flex: 0 0 280px;
-        height: 420px;
+        width: 100%;
         display: flex;
         flex-direction: column;
         border-radius: 12px;
@@ -468,7 +453,12 @@
         transition: all 0.3s ease;
         position: relative;
         overflow: visible; /* Allow health badge to overflow */
-        will-change: transform; /* Optimize for animations */
+    }
+
+    /* Active Card - Larger */
+    .detail-card.active-card {
+        flex: 1 1 auto;
+        min-height: 400px;
     }
 
     /* === CREATURE TYPE BORDERS & BACKGROUNDS === */
@@ -500,14 +490,11 @@
     }
 
     /* === ACTIVE CARD STYLING === */
-    .detail-card.active {
-        transform: scale(1.08);
+    .detail-card.active-card {
         box-shadow:
             0 0 0 3px rgba(251, 191, 36, 0.4),
             0 0 35px rgba(251, 191, 36, 0.6),
             0 8px 20px rgba(0, 0, 0, 0.3);
-        background-color: rgba(251, 191, 36, 0.2) !important;
-        z-index: 10;
         animation: activeGlow 2s ease-in-out infinite;
     }
 
@@ -719,7 +706,7 @@
         text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
     }
 
-    .detail-card.active .creature-name {
+    .detail-card.active-card .creature-name {
         font-size: 1.5em;
         font-weight: 800;
     }
@@ -753,83 +740,127 @@
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
     }
 
-    /* === STATUS SECTION (Above name banner) === */
-    .status-section {
+    /* === CONDITIONS CONTAINER (Above name banner) === */
+    .conditions-container {
         position: absolute;
         bottom: 62px; /* Just above name banner */
         left: 0;
         right: 0;
+        max-height: 150px; /* Limit height to avoid covering too much */
+        overflow-y: auto; /* Scrollable if many conditions */
+        overflow-x: hidden;
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: wrap; /* Horizontal wrapping layout */
         gap: 6px;
-        justify-content: center;
         padding: 8px 12px;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        z-index: 5;
-    }
-
-    :global(.theme-dark) .status-section {
         background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(12px);
+        z-index: 5;
+        border-top: 2px solid rgba(255, 255, 255, 0.2);
+        justify-content: center; /* Center the chips */
     }
 
-    .status-badge {
-        display: inline-block;
+    :global(.theme-dark) .conditions-container {
+        background: rgba(0, 0, 0, 0.85);
+    }
+
+    /* Custom scrollbar for conditions */
+    .conditions-container::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .conditions-container::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 3px;
+    }
+
+    .conditions-container::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+    }
+
+    .conditions-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Condition chip/badge */
+    .condition-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         padding: 4px 10px;
         border-radius: 12px;
         background: rgba(255, 255, 255, 0.25);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
         color: white;
         font-size: 0.85em;
         font-weight: 600;
         white-space: nowrap;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.2s ease;
     }
 
-    .status-more {
-        background: rgba(251, 191, 36, 0.9);
-        color: #000;
-        font-weight: 700;
-        border-color: rgba(251, 191, 36, 0.5);
+    .condition-chip:hover {
+        background: rgba(255, 255, 255, 0.35);
+        transform: scale(1.05);
     }
 
-    /* === INITIATIVE SIDEBAR OVERLAY === */
+    :global(.theme-dark) .condition-chip {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    :global(.theme-dark) .condition-chip:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    .condition-chip-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        color: currentColor;
+    }
+
+    .condition-chip-icon :global(svg) {
+        width: 100%;
+        height: 100%;
+        fill: currentColor;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+    }
+
+    .condition-chip-emoji {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1em;
+        line-height: 1;
+        width: 16px;
+        height: 16px;
+    }
+
+    .condition-chip-name {
+        line-height: 1;
+    }
+
+    /* === INITIATIVE SIDEBAR === */
     .initiative-sidebar {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        width: auto;
-        min-width: 220px;
-        max-width: 300px;
-        max-height: calc(100% - 64px);
+        flex: 1 1 auto;
         display: grid;
-        grid-template-columns: 40px 1fr 60px auto;
+        grid-template-columns: 48px 1fr 60px auto;
         gap: 4px 10px;
-        padding: 16px;
-        background: rgba(0, 0, 0, 0.9);
+        padding: 0;
+        background: transparent;
         border-radius: 12px;
         overflow-y: auto;
-        z-index: 100;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        z-index: 10;
         align-items: center;
+        align-content: start;
     }
 
     :global(.theme-dark) .initiative-sidebar {
-        background: rgba(0, 0, 0, 0.9);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    }
-
-    .sidebar-header {
-        grid-column: 1 / -1;
-        font-size: 1.1em;
-        font-weight: 700;
-        text-align: center;
-        padding: 8px;
-        margin-bottom: 8px;
-        border-bottom: 2px solid rgba(255, 255, 255, 0.3);
-        letter-spacing: 0.05em;
-        color: rgba(255, 255, 255, 0.95);
+        background: transparent;
     }
 
     /* === INITIATIVE ITEM === */
@@ -843,27 +874,27 @@
         transition: all 0.2s ease;
         font-size: 0.95em;
         color: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(8px);
     }
 
     .initiative-item.creature-type-monster {
         border-left: 3px solid #dc2626;
-        background-color: rgba(220, 38, 38, 0.08);
+        background-color: rgba(220, 38, 38, 0.20);
     }
 
     .initiative-item.creature-type-ally {
         border-left: 3px solid #10b981;
-        background-color: rgba(16, 185, 129, 0.08);
+        background-color: rgba(16, 185, 129, 0.20);
     }
 
     .initiative-item.creature-type-player {
         border-left: 3px solid #3b82f6;
-        background-color: rgba(59, 130, 246, 0.08);
+        background-color: rgba(59, 130, 246, 0.20);
     }
 
     .initiative-item.active {
         background: rgba(251, 191, 36, 0.3);
         font-weight: 700;
-        transform: scale(1.05);
         box-shadow:
             0 0 0 2px rgba(251, 191, 36, 0.5),
             0 0 12px rgba(251, 191, 36, 0.6),
@@ -871,15 +902,15 @@
     }
 
     :global(.theme-dark) .initiative-item.creature-type-monster {
-        background-color: rgba(220, 38, 38, 0.12);
+        background-color: rgba(220, 38, 38, 0.25);
     }
 
     :global(.theme-dark) .initiative-item.creature-type-ally {
-        background-color: rgba(16, 185, 129, 0.12);
+        background-color: rgba(16, 185, 129, 0.25);
     }
 
     :global(.theme-dark) .initiative-item.creature-type-player {
-        background-color: rgba(59, 130, 246, 0.12);
+        background-color: rgba(59, 130, 246, 0.25);
     }
 
     :global(.theme-dark) .initiative-item.active {
@@ -890,25 +921,108 @@
             0 2px 8px rgba(0, 0, 0, 0.5);
     }
 
-    .init-number {
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.2);
-        font-weight: 600;
-        font-size: 0.95em;
-        color: rgba(255, 255, 255, 0.95);
+    /* === AVATAR CONTAINER === */
+    .avatar-container {
+        position: relative;
+        width: 40px;
+        height: 40px;
         justify-self: center;
         margin: 0 4px;
     }
 
-    .initiative-item.active .init-number {
+    /* === AVATAR IMAGE === */
+    .avatar-image {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+        display: block;
+        border: 2px solid;
+        transition: all 0.2s ease;
+    }
+
+    .avatar-image.creature-type-monster {
+        border-color: #dc2626;
+    }
+
+    .avatar-image.creature-type-ally {
+        border-color: #10b981;
+    }
+
+    .avatar-image.creature-type-player {
+        border-color: #3b82f6;
+    }
+
+    .initiative-item.active .avatar-image {
+        border-color: #fbbf24;
+        box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+    }
+
+    /* === AVATAR PLACEHOLDER === */
+    .avatar-placeholder {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid;
+        transition: all 0.2s ease;
+    }
+
+    .avatar-placeholder.creature-type-monster {
+        background: linear-gradient(135deg, rgba(220, 38, 38, 0.9) 0%, rgba(153, 27, 27, 0.9) 100%);
+        border-color: #dc2626;
+    }
+
+    .avatar-placeholder.creature-type-ally {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.9) 0%, rgba(5, 150, 105, 0.9) 100%);
+        border-color: #10b981;
+    }
+
+    .avatar-placeholder.creature-type-player {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.9) 0%, rgba(37, 99, 235, 0.9) 100%);
+        border-color: #3b82f6;
+    }
+
+    .initiative-item.active .avatar-placeholder {
+        border-color: #fbbf24;
+        box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+    }
+
+    .avatar-placeholder :global(svg) {
+        width: 20px;
+        height: 20px;
+        opacity: 0.9;
+        color: white;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+    }
+
+    /* === INITIATIVE BADGE (SUBTLE) === */
+    .init-badge {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.75);
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 0.65em;
+        font-weight: 600;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+
+    .init-badge.active-badge {
         background: #fbbf24;
         color: #000;
         font-weight: 700;
+        border-color: #fbbf24;
+        box-shadow: 0 0 6px rgba(251, 191, 36, 0.8);
     }
 
     .init-name {
@@ -994,6 +1108,18 @@
         fill: currentColor;
     }
 
+    .sidebar-condition-emoji {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        font-size: 1em;
+        line-height: 1;
+        color: rgba(255, 255, 255, 0.95);
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+    }
+
     .sidebar-condition-more {
         font-size: 0.75em;
         font-weight: 700;
@@ -1003,171 +1129,9 @@
         color: rgba(255, 255, 255, 0.95);
     }
 
-    /* === STATUS BADGE UPDATES === */
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 10px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.25);
-        color: white;
-        font-size: 0.85em;
-        font-weight: 600;
-        white-space: nowrap;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .status-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        color: currentColor;
-    }
-
-    .status-icon :global(svg) {
-        width: 100%;
-        height: 100%;
-        fill: currentColor;
-        color: currentColor;
-        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-    }
-
-    .status-icon :global(svg path) {
-        fill: currentColor;
-    }
-
-    .status-name {
-        line-height: 1;
-    }
-
-    /* === CONDITION DETAILS SECTION === */
-    .condition-details-section {
-        position: fixed;
-        bottom: 12px;
-        left: 12px;
-        right: 12px; /* Use full width */
-        background: rgba(0, 0, 0, 0.9);
-        backdrop-filter: blur(12px);
-        border-radius: 8px;
-        padding: 10px 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        z-index: 50;
-    }
-
-    :global(.theme-dark) .condition-details-section {
-        background: rgba(0, 0, 0, 0.9);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    }
-
-    .condition-details-header {
-        font-size: 0.85em;
-        font-weight: 700;
-        text-align: center;
-        padding: 0 0 8px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
-        letter-spacing: 0.05em;
-        margin-bottom: 8px;
-        color: rgba(255, 255, 255, 0.95);
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    }
-
-    .condition-cards-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 8px;
-    }
-
-    /* === CONDITION CARD === */
-    .condition-card {
-        display: flex;
-        gap: 8px;
-        padding: 8px;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        transition: all 0.2s ease;
-    }
-
-    .condition-card:hover {
-        background: rgba(255, 255, 255, 0.2);
-        transform: translateY(-1px);
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    }
-
-    :global(.theme-dark) .condition-card {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-
-    :global(.theme-dark) .condition-card:hover {
-        background: rgba(255, 255, 255, 0.2);
-    }
-
-    /* Creature type borders for condition cards */
-    .condition-card.creature-type-monster {
-        border-left: 3px solid #dc2626;
-    }
-
-    .condition-card.creature-type-ally {
-        border-left: 3px solid #10b981;
-    }
-
-    .condition-card.creature-type-player {
-        border-left: 3px solid #3b82f6;
-    }
-
-    .condition-card-icon {
-        flex: 0 0 32px;
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: rgba(255, 255, 255, 0.95);
-    }
-
-    .condition-card-icon :global(svg) {
-        width: 100%;
-        height: 100%;
-        fill: currentColor;
-        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-    }
-
-    .condition-card-content {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .condition-card-name {
-        font-size: 0.95em;
-        font-weight: 700;
-        margin-bottom: 4px;
-        color: rgba(255, 255, 255, 0.95);
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .condition-card-description {
-        font-size: 0.8em;
-        line-height: 1.4;
-        color: rgba(255, 255, 255, 0.8);
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
 
     @media (prefers-reduced-motion: reduce) {
-        .detail-card.active {
+        .detail-card.active-card {
             animation: none;
         }
         .detail-card {
@@ -1210,11 +1174,5 @@
             rgba(0, 0, 0, 0.3) 50%,
             rgba(0, 0, 0, 0.4) 100%
         );
-    }
-
-    /* Ensure content layers above background */
-    .carousel-container {
-        position: relative;
-        z-index: 10;
     }
 </style>

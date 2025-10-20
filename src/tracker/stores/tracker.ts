@@ -321,7 +321,7 @@ function createTracker() {
                 creatures.push(creature);
             }
         }
-        return creatures;
+        return [...creatures];
     };
     const updateCreatures = (...updates: CreatureUpdates[]) =>
         updateAndSave((creatures) => {
@@ -355,10 +355,12 @@ function createTracker() {
     const setNumbers = (list: Creature[]) => {
         for (let i = 0; i < list.length; i++) {
             const creature = list[i];
-            if (
-                creature.player ||
-                list.filter((c) => c.name == creature.name).length == 1
-            ) {
+            if (creature.player) {
+                continue;
+            }
+            // Check if there's only one creature with this name
+            if (list.filter((c) => c.name == creature.name).length == 1) {
+                creature.number = 0;
                 continue;
             }
             if (creature.number > 0) continue;
@@ -512,7 +514,7 @@ function createTracker() {
                     }
                 }
 
-                return creatures;
+                return [...creatures];
             }),
 
         players: derived(ordered, (creatures) =>
@@ -790,7 +792,7 @@ function createTracker() {
                     "added to the combat."
                 );
                 setNumbers(creatures);
-                return creatures;
+                return [...creatures];
             }),
         remove: (...items: Creature[]) =>
             updateAndSave((creatures) => {
@@ -801,6 +803,7 @@ function createTracker() {
                     _logger?.join(items.map((c) => c.name)),
                     "removed from the combat."
                 );
+                setNumbers(creatures);
                 return creatures;
             }),
         replace: (old: Creature, replacer: Creature) => {
@@ -810,7 +813,7 @@ function createTracker() {
                     creatures.splice(index, 1, replacer);
                     setNumbers(creatures);
                 }
-                return creatures;
+                return [...creatures];
             });
         },
         update: () => update((c) => c),
@@ -818,7 +821,7 @@ function createTracker() {
         roll: (plugin: InitiativeTracker) =>
             updateAndSave((creatures) => {
                 rollIntiative(plugin, creatures);
-                return creatures;
+                return [...creatures];
             }),
         new: (plugin: InitiativeTracker, state?: InitiativeViewState) =>
             updateAndSave((creatures) => {
@@ -913,7 +916,7 @@ function createTracker() {
                     creature.status.clear();
                 }
                 _logger?.log("Encounter HP & Statuses reset");
-                return creatures;
+                return [...creatures];
             }),
 
         getOrderedCreatures: () => get(ordered),

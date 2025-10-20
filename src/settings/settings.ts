@@ -310,6 +310,33 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
             });
 
         new Setting(additionalContainer)
+            .setName("Seconds Per Round (In-Game Time)")
+            .setDesc(
+                createFragment((e) => {
+                    const secondsPerRound = this.plugin.data.secondsPerRound ?? 6;
+                    const roundsPerMinute = (60 / secondsPerRound).toFixed(1);
+                    e.createSpan({
+                        text: `Each combat round represents ${secondsPerRound} seconds in-game. `
+                    });
+                    e.createEl("br");
+                    e.createSpan({
+                        text: `(${roundsPerMinute} rounds = 1 minute). D&D 5e default: 6 seconds.`
+                    });
+                })
+            )
+            .addSlider((s) => {
+                s.setLimits(1, 60, 1);
+                s.setValue(this.plugin.data.secondsPerRound ?? 6);
+                s.setDynamicTooltip();
+                s.onChange(async (v) => {
+                    this.plugin.data.secondsPerRound = v;
+                    await this.plugin.saveSettings();
+                    // Refresh the description to show new calculation
+                    this.display();
+                });
+            });
+
+        new Setting(additionalContainer)
             .setName("Log Battles")
             .setDesc(
                 "Actions taken during battle will be logged to the specified log folder."
@@ -1622,18 +1649,34 @@ class StatusModal extends Modal {
                 (v) => (this.status.description = v)
             );
         });
+        // Determine if current icon is a predefined SVG or custom/emoji
+        const availableIcons = getAvailableConditionIcons();
+        const isPredefinedIcon = this.status.icon && availableIcons.includes(this.status.icon);
+
         new Setting(this.contentEl)
-            .setName("Icon")
-            .setDesc("Select an icon to represent this condition.")
+            .setName("Icon (Predefined SVG)")
+            .setDesc("Select a predefined icon from the dropdown, or leave as 'None' to use a custom icon below.")
             .addDropdown((d) => {
                 d.addOption("", "None");
-                const availableIcons = getAvailableConditionIcons();
                 for (const iconName of availableIcons) {
                     d.addOption(iconName, iconName.charAt(0).toUpperCase() + iconName.slice(1));
                 }
-                d.setValue(this.status.icon ?? "");
+                d.setValue(isPredefinedIcon ? this.status.icon : "");
                 d.onChange((v) => {
+                    // Only update if no custom icon is set in the text field below
                     this.status.icon = v || undefined;
+                });
+            });
+
+        new Setting(this.contentEl)
+            .setName("Custom Icon (Emoji/Text)")
+            .setDesc("Enter an emoji or custom text (e.g., 🔥). This overrides the predefined icon if set.")
+            .addText((t) => {
+                t.setPlaceholder("e.g., 🔥 or ⚡ (leave empty to use predefined)");
+                t.setValue(isPredefinedIcon ? "" : (this.status.icon ?? ""));
+                t.onChange((v) => {
+                    // Custom icon overrides dropdown selection
+                    this.status.icon = v.trim() || undefined;
                 });
             });
         new Setting(this.contentEl)

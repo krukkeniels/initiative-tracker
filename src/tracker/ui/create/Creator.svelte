@@ -17,7 +17,7 @@
     let rollHP = plugin.data.rollHP;
 
     const adding = writable<Array<[Creature, number]>>([]);
-    const editing = writable<Creature>(creature);
+    const editing = writable<Creature>(creature ? new Creature(creature.toProperties()) : null);
 
     const cancel = (node: HTMLElement) => {
         new ButtonComponent(node)

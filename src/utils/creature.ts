@@ -169,10 +169,10 @@ export class Creature {
     }
 
     getName() {
-        let name = [this.display ?? this.name];
-        /* if (this.display) {
+        if (this.display) {
             return this.display;
-        } */
+        }
+        let name = [this.name];
         if (this.number > 0) {
             name.push(`${this.number}`);
         }

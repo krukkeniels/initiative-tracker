@@ -57,6 +57,9 @@ export interface InitiativeTrackerData {
 
     // Turn Timer
     turnTimerThreshold: number;
+
+    // Encounter Timer
+    secondsPerRound: number;
 }
 export interface InputValidate {
     input: HTMLInputElement;

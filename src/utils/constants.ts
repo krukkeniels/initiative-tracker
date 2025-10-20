@@ -86,7 +86,8 @@ export const DEFAULT_SETTINGS: InitiativeTrackerData = {
     imageStyle: "fantasy-art",
     imageGrimness: 50,
     backgroundImagesFolder: "initiative-tracker/backgrounds",
-    turnTimerThreshold: 120
+    turnTimerThreshold: 120,
+    secondsPerRound: 6
 };
 
 export const DECIMAL_TO_VULGAR_FRACTION: Record<string, string> = {
