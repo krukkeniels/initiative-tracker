@@ -186,6 +186,20 @@ export class BackgroundModal extends Modal {
 
         // Action buttons
         const actions = container.createDiv("background-modal-actions");
+
+        const setDefaultBtn = actions.createEl("button", {
+            text: "Set as Default"
+        });
+        setDefaultBtn.disabled = !this.selectedBackground;
+        setDefaultBtn.addEventListener("click", async () => {
+            if (this.selectedBackground) {
+                this.plugin.data.defaultBackgroundImage = this.selectedBackground.imagePath;
+                await this.plugin.saveSettings();
+                new Notice(`"${this.selectedBackground.name}" set as default background`);
+                this.refreshContent();
+            }
+        });
+
         const selectBtn = actions.createEl("button", {
             text: "Use Selected",
             cls: "mod-cta"
@@ -221,6 +235,16 @@ export class BackgroundModal extends Modal {
             info.createEl("p", { text: bg.description, cls: "background-card-desc" });
         }
         const meta = info.createDiv("background-card-meta");
+
+        // Check if this is the default background
+        const isDefault = this.plugin.data.defaultBackgroundImage === bg.imagePath;
+        if (isDefault) {
+            meta.createEl("span", {
+                text: "⭐ Default",
+                cls: "background-type-badge type-default"
+            });
+        }
+
         meta.createEl("span", {
             text: bg.type === "general" ? "General" : "Specific",
             cls: `background-type-badge type-${bg.type}`

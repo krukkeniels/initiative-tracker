@@ -1260,6 +1260,29 @@ export default class InitiativeTrackerSettings extends PluginSettingTab {
                     this.display();
                 });
             });
+
+        // Default Background Image
+        const { BackgroundManager } = await import("../utils/background-manager");
+        const backgroundManager = new BackgroundManager(
+            this.app,
+            this.plugin.data.backgroundImagesFolder
+        );
+        const availableBackgrounds = await backgroundManager.listBackgrounds();
+
+        new Setting(containerEl)
+            .setName("Default Background Image")
+            .setDesc("This background will be automatically applied to new encounters")
+            .addDropdown((d) => {
+                d.addOption("", "None");
+                for (const bg of availableBackgrounds) {
+                    d.addOption(bg.imagePath, bg.name);
+                }
+                d.setValue(this.plugin.data.defaultBackgroundImage ?? "");
+                d.onChange(async (v) => {
+                    this.plugin.data.defaultBackgroundImage = v || undefined;
+                    await this.plugin.saveSettings();
+                });
+            });
     }
 }
 

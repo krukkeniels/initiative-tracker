@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/marti/Git/shopboard/src/**)",
+      "Read(//c/Users/marti/Git/shopboard/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

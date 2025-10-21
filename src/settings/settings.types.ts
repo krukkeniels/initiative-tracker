@@ -54,6 +54,7 @@ export interface InitiativeTrackerData {
     imageStyle: string;
     imageGrimness: number;
     backgroundImagesFolder: string;
+    defaultBackgroundImage: string | undefined;
 
     // Turn Timer
     turnTimerThreshold: number;

@@ -48,6 +48,30 @@
         return "full"; // Healthy
     };
 
+    const getHeartStates = (creature: Creature): string[] => {
+        const { hp, max, status } = creature;
+        if (!hp) return ["empty", "empty", "empty"];
+
+        // Check for unconscious or incapacitated status
+        const hasDeathStatus = [...status].some(
+            (s) => s.name === "Unconscious" || s.name === "Incapacitated"
+        );
+
+        if (hp <= 0 || hasDeathStatus) {
+            // Defeated - 3 empty hearts
+            return ["empty", "empty", "empty"];
+        } else if (hp < max / 2) {
+            // Bloodied (< 50% HP) - 1 full, 2 empty
+            return ["full", "empty", "empty"];
+        } else if (hp < max) {
+            // Hurt (< 100% HP but >= 50%) - 2 full, 1 empty
+            return ["full", "full", "empty"];
+        } else {
+            // Healthy (100% HP) - 3 full hearts
+            return ["full", "full", "full"];
+        }
+    };
+
     const heartIcon = (node: HTMLElement) => {
         setIcon(node, "heart");
     };
@@ -248,13 +272,11 @@
                     {#if creature.player && $data.diplayPlayerHPValues}
                         <div class="hp-text">{@html creature.hpDisplay}</div>
                     {:else}
-                        {@const hpIcon = getHpIcon(creature)}
-                        <div class="health-icons">
-                            {#if hpIcon === "skull"}
-                                <span use:skullIcon />
-                            {:else}
-                                <span class="hp-icon">{@html getHpIconSvg(hpIcon)}</span>
-                            {/if}
+                        {@const heartStates = getHeartStates(creature)}
+                        <div class="health-icons multi-hearts">
+                            {#each heartStates as heartState}
+                                <span class="heart-icon">{@html getHpIconSvg(heartState)}</span>
+                            {/each}
                         </div>
                     {/if}
                 </div>
@@ -344,22 +366,6 @@
 
                 <span class="init-name">{name(creature)}</span>
 
-                <!-- Health Icons -->
-                {#if creature.player && $data.diplayPlayerHPValues}
-                    <div class="sidebar-health">
-                        <span class="sidebar-hp-text">{@html creature.hpDisplay}</span>
-                    </div>
-                {:else}
-                    {@const hpIcon = getHpIcon(creature)}
-                    <div class="sidebar-health">
-                        {#if hpIcon === "skull"}
-                            <span use:skullIcon class="sidebar-skull" />
-                        {:else}
-                            <span class="sidebar-hp-icon">{@html getHpIconSvg(hpIcon)}</span>
-                        {/if}
-                    </div>
-                {/if}
-
                 <!-- Condition Icons -->
                 {#if creature.status.size > 0}
                     <div class="sidebar-conditions">
@@ -379,6 +385,22 @@
                         {#if creature.status.size > 5}
                             <span class="sidebar-condition-more">+{creature.status.size - 5}</span>
                         {/if}
+                    </div>
+                {:else}
+                    <div class="sidebar-conditions"></div>
+                {/if}
+
+                <!-- Health Icons (Rightmost column with divider) -->
+                {#if creature.player && $data.diplayPlayerHPValues}
+                    <div class="sidebar-health">
+                        <span class="sidebar-hp-text">{@html creature.hpDisplay}</span>
+                    </div>
+                {:else}
+                    {@const heartStates = getHeartStates(creature)}
+                    <div class="sidebar-health multi-hearts-sidebar">
+                        {#each heartStates as heartState}
+                            <span class="sidebar-heart-icon">{@html getHpIconSvg(heartState)}</span>
+                        {/each}
                     </div>
                 {/if}
             </div>
@@ -740,6 +762,28 @@
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
     }
 
+    /* === MULTI-HEART DISPLAY (Active Card) === */
+    .multi-hearts {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .multi-hearts .heart-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .multi-hearts .heart-icon :global(svg) {
+        width: 40px;
+        height: 40px;
+        color: white;
+        fill: currentColor;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+    }
+
     /* === CONDITIONS CONTAINER (Above name banner) === */
     .conditions-container {
         position: absolute;
@@ -848,7 +892,7 @@
     .initiative-sidebar {
         flex: 1 1 auto;
         display: grid;
-        grid-template-columns: 48px 1fr 60px auto;
+        grid-template-columns: 48px 1fr auto 90px;
         gap: 4px 10px;
         padding: 0;
         background: transparent;
@@ -1038,7 +1082,9 @@
         gap: 2px;
         align-items: center;
         justify-content: center;
-        margin: 0 4px;
+        margin: 0 4px 0 10px;
+        padding-left: 10px;
+        padding-right: 8px;
     }
 
     .sidebar-hp-text {
@@ -1072,6 +1118,29 @@
     .sidebar-hp-icon :global(svg) {
         width: 16px;
         height: 16px;
+        opacity: 0.9;
+        fill: currentColor;
+        color: rgba(255, 255, 255, 0.85);
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+    }
+
+    /* === MULTI-HEART DISPLAY (Sidebar) === */
+    .multi-hearts-sidebar {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .multi-hearts-sidebar .sidebar-heart-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .multi-hearts-sidebar .sidebar-heart-icon :global(svg) {
+        width: 24px;
+        height: 24px;
         opacity: 0.9;
         fill: currentColor;
         color: rgba(255, 255, 255, 0.85);

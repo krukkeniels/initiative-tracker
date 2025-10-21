@@ -832,7 +832,10 @@ function createTracker() {
                 $round.set(state?.round ?? 1);
                 $state.set(state?.state ?? false);
                 $name.set(state?.name ?? null);
-                $backgroundImageUrl.set(state?.backgroundImageUrl ?? undefined);
+                // Use default background if no background is specified
+                const backgroundUrl = state?.backgroundImageUrl ??
+                    (plugin.data.defaultBackgroundImage || undefined);
+                $backgroundImageUrl.set(backgroundUrl);
 
                 if (!state?.creatures) {
                     /**

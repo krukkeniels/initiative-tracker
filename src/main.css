@@ -356,7 +356,7 @@ body {
 
 .background-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     padding: 8px;
 }
@@ -434,6 +434,12 @@ body {
 .background-type-badge.type-specific {
     background: var(--interactive-accent);
     color: white;
+}
+
+.background-type-badge.type-default {
+    background: #f59e0b;
+    color: white;
+    font-weight: 700;
 }
 
 .background-creatures {

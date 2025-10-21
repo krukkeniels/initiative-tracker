@@ -86,6 +86,7 @@ export const DEFAULT_SETTINGS: InitiativeTrackerData = {
     imageStyle: "fantasy-art",
     imageGrimness: 50,
     backgroundImagesFolder: "initiative-tracker/backgrounds",
+    defaultBackgroundImage: undefined,
     turnTimerThreshold: 120,
     secondsPerRound: 6
 };
