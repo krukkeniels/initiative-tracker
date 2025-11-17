@@ -392,12 +392,12 @@
 
                 <!-- Health Icons (Rightmost column with divider) -->
                 {#if creature.player && $data.diplayPlayerHPValues}
-                    <div class="sidebar-health">
+                    <div class="sidebar-health {getHpStatus(creature.hp, creature.max).toLowerCase()}">
                         <span class="sidebar-hp-text">{@html creature.hpDisplay}</span>
                     </div>
                 {:else}
                     {@const heartStates = getHeartStates(creature)}
-                    <div class="sidebar-health multi-hearts-sidebar">
+                    <div class="sidebar-health multi-hearts-sidebar {getHpStatus(creature.hp, creature.max).toLowerCase()}">
                         {#each heartStates as heartState}
                             <span class="sidebar-heart-icon">{@html getHpIconSvg(heartState)}</span>
                         {/each}
@@ -435,7 +435,7 @@
     .round-header {
         text-align: center;
         padding: 12px 16px;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.2);
         backdrop-filter: blur(8px);
         border-radius: 8px;
         border: 2px solid rgba(255, 255, 255, 0.3);
@@ -462,7 +462,7 @@
     }
 
     :global(.theme-dark) .round-header {
-        background: rgba(0, 0, 0, 0.75);
+        background: rgba(0, 0, 0, 0.25);
     }
 
     /* === DETAIL CARD === */
@@ -474,7 +474,7 @@
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         transition: all 0.3s ease;
         position: relative;
-        overflow: visible; /* Allow health badge to overflow */
+        overflow: hidden;
     }
 
     /* Active Card - Larger */
@@ -702,20 +702,21 @@
         left: 0;
         right: 0;
         padding: 16px 12px;
-        backdrop-filter: blur(12px);
+        backdrop-filter: blur(8px);
         border-top: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0 0 8px 8px;
     }
 
     .name-banner.creature-type-monster {
-        background: linear-gradient(to top, rgba(220, 38, 38, 0.9) 0%, rgba(220, 38, 38, 0.7) 100%);
+        background: linear-gradient(to top, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
     }
 
     .name-banner.creature-type-ally {
-        background: linear-gradient(to top, rgba(16, 185, 129, 0.9) 0%, rgba(16, 185, 129, 0.7) 100%);
+        background: linear-gradient(to top, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
     }
 
     .name-banner.creature-type-player {
-        background: linear-gradient(to top, rgba(59, 130, 246, 0.9) 0%, rgba(59, 130, 246, 0.7) 100%);
+        background: linear-gradient(to top, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%);
     }
 
     .creature-name {
@@ -781,7 +782,7 @@
         height: 40px;
         color: white;
         fill: currentColor;
-        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+        filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.7));
     }
 
     /* === CONDITIONS CONTAINER (Above name banner) === */
@@ -797,15 +798,15 @@
         flex-wrap: wrap; /* Horizontal wrapping layout */
         gap: 6px;
         padding: 8px 12px;
-        background: rgba(0, 0, 0, 0.75);
-        backdrop-filter: blur(12px);
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(8px);
         z-index: 5;
         border-top: 2px solid rgba(255, 255, 255, 0.2);
         justify-content: center; /* Center the chips */
     }
 
     :global(.theme-dark) .conditions-container {
-        background: rgba(0, 0, 0, 0.85);
+        background: rgba(0, 0, 0, 0.25);
     }
 
     /* Custom scrollbar for conditions */
@@ -892,7 +893,7 @@
     .initiative-sidebar {
         flex: 1 1 auto;
         display: grid;
-        grid-template-columns: 48px 1fr auto 90px;
+        grid-template-columns: 48px 1fr auto 115px;
         gap: 4px 10px;
         padding: 0;
         background: transparent;
@@ -1083,15 +1084,45 @@
         align-items: center;
         justify-content: center;
         margin: 0 4px 0 10px;
-        padding-left: 10px;
-        padding-right: 8px;
+        padding: 6px 14px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+
+    :global(.theme-dark) .sidebar-health {
+        background: rgba(0, 0, 0, 0.85);
+    }
+
+    /* Sidebar Health State Colors */
+    .sidebar-health.healthy {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.85);
+    }
+
+    .sidebar-health.hurt {
+        border-color: #f59e0b;
+        background: rgba(245, 158, 11, 0.85);
+    }
+
+    .sidebar-health.bloodied {
+        border-color: #dc2626;
+        background: rgba(220, 38, 38, 0.85);
+    }
+
+    .sidebar-health.defeated {
+        border-color: #6b7280;
+        background: rgba(107, 114, 128, 0.85);
     }
 
     .sidebar-hp-text {
         font-size: 0.85em;
-        font-weight: 600;
+        font-weight: 700;
         white-space: nowrap;
-        color: rgba(255, 255, 255, 0.9);
+        color: white;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
     }
 
     .sidebar-health :global(svg) {
@@ -1143,8 +1174,8 @@
         height: 24px;
         opacity: 0.9;
         fill: currentColor;
-        color: rgba(255, 255, 255, 0.85);
-        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+        color: white;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
     }
 
     /* === SIDEBAR CONDITIONS === */
