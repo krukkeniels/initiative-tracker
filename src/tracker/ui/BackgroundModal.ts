@@ -2,27 +2,20 @@ import { App, Modal, Notice, requestUrl, Setting } from "obsidian";
 import type InitiativeTracker from "src/main";
 import type { BackgroundMetadata } from "src/settings/settings.types";
 import { BackgroundManager } from "src/utils/background-manager";
-import { OpenAIImageService, IMAGE_STYLES } from "src/utils/openai-service";
+import { OpenAIImageService } from "src/utils/openai-service";
 import type { Creature } from "src/utils/creature";
 
 export class BackgroundModal extends Modal {
     private backgroundManager: BackgroundManager;
-    private currentTab: "browse" | "generate" = "browse";
     private selectedBackground: BackgroundMetadata | null = null;
     private backgrounds: BackgroundMetadata[] = [];
-    private filteredBackgrounds: BackgroundMetadata[] = [];
-    private filterType: "all" | "general" | "specific" = "all";
     private searchQuery: string = "";
 
-    // Generate form state
-    private generateName: string = "";
-    private generateType: "general" | "specific" = "general";
-    private generateDescription: string = "";
-    private generateStyle: string;
-    private generateGrimness: number;
+    // Generate state
+    private userPrompt: string = "";
     private isGenerating: boolean = false;
     private generatedImageUrl: string | undefined;
-    private generateButton: HTMLButtonElement | null = null;
+    private generatedName: string | undefined;
 
     constructor(
         app: App,
@@ -35,8 +28,6 @@ export class BackgroundModal extends Modal {
             app,
             plugin.data.backgroundImagesFolder
         );
-        this.generateStyle = plugin.data.imageStyle || "fantasy-art";
-        this.generateGrimness = plugin.data.imageGrimness ?? 50;
     }
 
     async onOpen() {
@@ -44,387 +35,234 @@ export class BackgroundModal extends Modal {
         contentEl.empty();
         contentEl.addClass("initiative-background-modal");
 
-        // Title
-        contentEl.createEl("h2", { text: "Background Image Manager" });
+        contentEl.createEl("h2", { text: "Background Image" });
 
-        // Tab buttons
-        const tabContainer = contentEl.createDiv("background-modal-tabs");
-        const browseTab = tabContainer.createEl("button", {
-            text: "Browse Existing",
-            cls: "background-tab-button"
-        });
-        const generateTab = tabContainer.createEl("button", {
-            text: "Generate New",
-            cls: "background-tab-button"
-        });
+        // Generate section
+        const generateSection = contentEl.createDiv("background-generate-section");
+        this.renderGenerateSection(generateSection);
 
-        browseTab.addEventListener("click", () => {
-            this.currentTab = "browse";
-            this.refreshContent();
-        });
-        generateTab.addEventListener("click", () => {
-            this.currentTab = "generate";
-            this.refreshContent();
-        });
+        // Preview section
+        contentEl.createDiv("background-preview-section");
 
-        // Content container
-        const contentContainer = contentEl.createDiv("background-modal-content");
-
-        // Load backgrounds and render
+        // Saved backgrounds section
+        const savedSection = contentEl.createDiv("background-saved-section");
         await this.loadBackgrounds();
-        this.refreshContent();
+        this.renderSavedSection(savedSection);
     }
 
-    private async loadBackgrounds() {
-        this.backgrounds = await this.backgroundManager.listBackgrounds();
-        this.applyFilters();
-    }
+    private renderGenerateSection(container: HTMLElement) {
+        const row = container.createDiv("background-generate-row");
 
-    private applyFilters() {
-        let filtered = this.backgrounds;
-
-        // Filter by type
-        if (this.filterType !== "all") {
-            filtered = filtered.filter(bg => bg.type === this.filterType);
-        }
-
-        // Filter by search query
-        if (this.searchQuery) {
-            const query = this.searchQuery.toLowerCase();
-            filtered = filtered.filter(
-                bg =>
-                    bg.name.toLowerCase().includes(query) ||
-                    bg.description?.toLowerCase().includes(query) ||
-                    bg.creatures?.some(c => c.toLowerCase().includes(query))
-            );
-        }
-
-        this.filteredBackgrounds = filtered;
-    }
-
-    private refreshContent() {
-        const contentContainer = this.contentEl.querySelector(
-            ".background-modal-content"
-        ) as HTMLElement;
-        if (!contentContainer) return;
-
-        contentContainer.empty();
-
-        // Clear button reference since we're re-rendering
-        this.generateButton = null;
-
-        // Update active tab styling
-        const tabs = this.contentEl.querySelectorAll(".background-tab-button");
-        tabs.forEach((tab, index) => {
-            if (
-                (index === 0 && this.currentTab === "browse") ||
-                (index === 1 && this.currentTab === "generate")
-            ) {
-                tab.addClass("active");
-            } else {
-                tab.removeClass("active");
+        const input = row.createEl("input", {
+            type: "text",
+            placeholder: "Describe the scene...",
+            cls: "background-prompt-input"
+        });
+        input.value = this.userPrompt;
+        input.addEventListener("input", () => {
+            this.userPrompt = input.value;
+        });
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && this.plugin.data.openaiApiKey) {
+                this.generateBackground();
             }
         });
 
-        if (this.currentTab === "browse") {
-            this.renderBrowseTab(contentContainer);
-        } else {
-            this.renderGenerateTab(contentContainer);
-        }
-    }
+        const generateBtn = row.createEl("button", {
+            text: "Generate",
+            cls: "mod-cta background-generate-btn"
+        });
+        generateBtn.disabled = !this.plugin.data.openaiApiKey;
+        generateBtn.addEventListener("click", () => this.generateBackground());
 
-    private renderBrowseTab(container: HTMLElement) {
-        // Filters
-        const filterContainer = container.createDiv("background-filters");
-
-        // Type filter
-        new Setting(filterContainer)
-            .setName("Filter by type")
-            .addDropdown(dropdown =>
-                dropdown
-                    .addOption("all", "All Types")
-                    .addOption("general", "General")
-                    .addOption("specific", "Specific")
-                    .setValue(this.filterType)
-                    .onChange(async value => {
-                        this.filterType = value as "all" | "general" | "specific";
-                        this.applyFilters();
-                        this.refreshContent();
-                    })
-            );
-
-        // Search
-        new Setting(filterContainer)
-            .setName("Search")
-            .addSearch(search =>
-                search
-                    .setPlaceholder("Search backgrounds...")
-                    .setValue(this.searchQuery)
-                    .onChange(async value => {
-                        this.searchQuery = value;
-                        this.applyFilters();
-                        this.refreshContent();
-                    })
-            );
-
-        // Background grid
-        const gridContainer = container.createDiv("background-grid");
-
-        if (this.filteredBackgrounds.length === 0) {
-            gridContainer.createEl("p", {
-                text:
-                    this.backgrounds.length === 0
-                        ? "No backgrounds saved yet. Generate your first one!"
-                        : "No backgrounds match your filters.",
-                cls: "background-empty-message"
+        if (!this.plugin.data.openaiApiKey) {
+            container.createEl("p", {
+                text: "Configure OpenAI API key in plugin settings to generate images.",
+                cls: "background-warning"
             });
-        } else {
-            for (const bg of this.filteredBackgrounds) {
-                this.renderBackgroundCard(gridContainer, bg);
-            }
         }
-
-        // Action buttons
-        const actions = container.createDiv("background-modal-actions");
-
-        const setDefaultBtn = actions.createEl("button", {
-            text: "Set as Default"
-        });
-        setDefaultBtn.disabled = !this.selectedBackground;
-        setDefaultBtn.addEventListener("click", async () => {
-            if (this.selectedBackground) {
-                this.plugin.data.defaultBackgroundImage = this.selectedBackground.imagePath;
-                await this.plugin.saveSettings();
-                new Notice(`"${this.selectedBackground.name}" set as default background`);
-                this.refreshContent();
-            }
-        });
-
-        const selectBtn = actions.createEl("button", {
-            text: "Use Selected",
-            cls: "mod-cta"
-        });
-        selectBtn.disabled = !this.selectedBackground;
-        selectBtn.addEventListener("click", () => {
-            if (this.selectedBackground) {
-                this.onSelect(this.selectedBackground.imagePath);
-                this.close();
-            }
-        });
-
-        const cancelBtn = actions.createEl("button", { text: "Cancel" });
-        cancelBtn.addEventListener("click", () => this.close());
     }
 
-    private renderBackgroundCard(container: HTMLElement, bg: BackgroundMetadata) {
-        const card = container.createDiv("background-card");
+    private renderPreviewSection() {
+        const container = this.contentEl.querySelector(
+            ".background-preview-section"
+        ) as HTMLElement;
+        if (!container) return;
+        container.empty();
+
+        if (this.isGenerating) {
+            const loading = container.createDiv("background-loading");
+            loading.createEl("span", {
+                text: "Generating image...",
+                cls: "background-loading-text"
+            });
+        } else if (this.generatedImageUrl) {
+            const preview = container.createDiv("background-preview");
+
+            if (this.generatedName) {
+                preview.createEl("h3", {
+                    text: this.generatedName,
+                    cls: "background-preview-name"
+                });
+            }
+
+            const img = preview.createEl("img", {
+                cls: "background-preview-image"
+            });
+            img.src = this.generatedImageUrl;
+
+            const actions = preview.createDiv("background-preview-actions");
+
+            const useBtn = actions.createEl("button", { text: "Use Once" });
+            useBtn.addEventListener("click", () => {
+                this.onSelect(this.generatedImageUrl!);
+                this.close();
+            });
+
+            const saveBtn = actions.createEl("button", {
+                text: "Save & Use",
+                cls: "mod-cta"
+            });
+            saveBtn.addEventListener("click", () => this.saveGeneratedBackground());
+        }
+    }
+
+    private renderSavedSection(container: HTMLElement) {
+        container.empty();
+
+        if (this.backgrounds.length === 0 && !this.generatedImageUrl && !this.isGenerating) {
+            return;
+        }
+
+        if (this.backgrounds.length > 0) {
+            const header = container.createDiv("background-saved-header");
+            header.createEl("h3", { text: "Saved Backgrounds" });
+
+            if (this.backgrounds.length > 6) {
+                const searchInput = header.createEl("input", {
+                    type: "text",
+                    placeholder: "Search...",
+                    cls: "background-search-input"
+                });
+                searchInput.value = this.searchQuery;
+                searchInput.addEventListener("input", () => {
+                    this.searchQuery = searchInput.value;
+                    this.renderSavedSection(container);
+                });
+            }
+
+            const filtered = this.getFilteredBackgrounds();
+            const grid = container.createDiv("background-grid");
+
+            if (filtered.length === 0) {
+                grid.createEl("p", {
+                    text: "No backgrounds match your search.",
+                    cls: "background-empty-message"
+                });
+            } else {
+                for (const bg of filtered) {
+                    this.renderBackgroundCard(grid, bg, container);
+                }
+            }
+
+            // Action buttons
+            const actions = container.createDiv("background-modal-actions");
+
+            const selectBtn = actions.createEl("button", {
+                text: "Use Selected",
+                cls: "mod-cta"
+            });
+            selectBtn.disabled = !this.selectedBackground;
+            selectBtn.addEventListener("click", () => {
+                if (this.selectedBackground) {
+                    this.onSelect(this.selectedBackground.imagePath);
+                    this.close();
+                }
+            });
+
+            const defaultBtn = actions.createEl("button", {
+                text: "Set as Default"
+            });
+            defaultBtn.disabled = !this.selectedBackground;
+            defaultBtn.addEventListener("click", async () => {
+                if (this.selectedBackground) {
+                    this.plugin.data.defaultBackgroundImage =
+                        this.selectedBackground.imagePath;
+                    await this.plugin.saveSettings();
+                    new Notice(
+                        `"${this.selectedBackground.name}" set as default background`
+                    );
+                    this.renderSavedSection(container);
+                }
+            });
+
+            const cancelBtn = actions.createEl("button", { text: "Cancel" });
+            cancelBtn.addEventListener("click", () => this.close());
+        }
+    }
+
+    private renderBackgroundCard(
+        grid: HTMLElement,
+        bg: BackgroundMetadata,
+        savedContainer: HTMLElement
+    ) {
+        const card = grid.createDiv("background-card");
         if (this.selectedBackground?.imagePath === bg.imagePath) {
             card.addClass("selected");
         }
 
-        // Image
         const imgContainer = card.createDiv("background-card-image");
         const img = imgContainer.createEl("img");
         img.src = this.app.vault.adapter.getResourcePath(bg.imagePath);
         img.alt = bg.name;
 
-        // Info
         const info = card.createDiv("background-card-info");
         info.createEl("h3", { text: bg.name });
-        if (bg.description) {
-            info.createEl("p", { text: bg.description, cls: "background-card-desc" });
-        }
-        const meta = info.createDiv("background-card-meta");
 
-        // Check if this is the default background
-        const isDefault = this.plugin.data.defaultBackgroundImage === bg.imagePath;
+        const isDefault =
+            this.plugin.data.defaultBackgroundImage === bg.imagePath;
         if (isDefault) {
-            meta.createEl("span", {
-                text: "⭐ Default",
-                cls: "background-type-badge type-default"
+            info.createEl("span", {
+                text: "Default",
+                cls: "background-default-badge"
             });
         }
 
-        meta.createEl("span", {
-            text: bg.type === "general" ? "General" : "Specific",
-            cls: `background-type-badge type-${bg.type}`
-        });
-        if (bg.creatures && bg.creatures.length > 0) {
-            meta.createEl("span", {
-                text: bg.creatures.join(", "),
-                cls: "background-creatures"
-            });
-        }
-
-        // Click to select
         card.addEventListener("click", () => {
             this.selectedBackground = bg;
-            this.refreshContent();
+            this.renderSavedSection(savedContainer);
         });
 
         // Delete button
         const deleteBtn = card.createDiv("background-card-delete");
         deleteBtn.innerHTML = "&times;";
-        deleteBtn.addEventListener("click", async e => {
+        deleteBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
             if (confirm(`Delete background "${bg.name}"?`)) {
                 await this.backgroundManager.deleteBackground(bg);
-                await this.loadBackgrounds();
                 if (this.selectedBackground?.imagePath === bg.imagePath) {
                     this.selectedBackground = null;
                 }
-                this.refreshContent();
+                await this.loadBackgrounds();
+                this.renderSavedSection(savedContainer);
             }
         });
     }
 
-    private renderGenerateTab(container: HTMLElement) {
-        const form = container.createDiv("background-generate-form");
+    private getFilteredBackgrounds(): BackgroundMetadata[] {
+        if (!this.searchQuery) return this.backgrounds;
 
-        // Name
-        new Setting(form)
-            .setName("Name")
-            .setDesc("A descriptive name for this background")
-            .addText(text =>
-                text
-                    .setPlaceholder("e.g., Dark Dungeon Corridor")
-                    .setValue(this.generateName)
-                    .onChange(value => {
-                        this.generateName = value;
-                        // Update button state directly without re-rendering entire form
-                        if (this.generateButton) {
-                            this.generateButton.disabled = !this.generateName || !this.plugin.data.openaiApiKey;
-                        }
-                    })
-            );
-
-        // Type
-        new Setting(form)
-            .setName("Type")
-            .setDesc(
-                "General backgrounds are reusable, Specific are for one-time encounters"
-            )
-            .addDropdown(dropdown =>
-                dropdown
-                    .addOption("general", "General (Reusable)")
-                    .addOption("specific", "Specific (One-time)")
-                    .setValue(this.generateType)
-                    .onChange(value => (this.generateType = value as "general" | "specific"))
-            );
-
-        // Description
-        new Setting(form)
-            .setName("Scene Description (Optional)")
-            .setDesc("Describe the scene you want to generate")
-            .addTextArea(text =>
-                text
-                    .setPlaceholder(
-                        'e.g., "A dark dungeon corridor with flickering torches"'
-                    )
-                    .setValue(this.generateDescription)
-                    .onChange(value => (this.generateDescription = value))
-            );
-
-        // Style
-        new Setting(form).setName("Art Style").addDropdown(dropdown => {
-            for (const [key, label] of Object.entries(IMAGE_STYLES)) {
-                dropdown.addOption(key, key.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" "));
-            }
-            dropdown
-                .setValue(this.generateStyle)
-                .onChange(value => (this.generateStyle = value));
-        });
-
-        // Grimness
-        const grimnessLabel = form.createDiv("background-grimness-label");
-        grimnessLabel.createEl("strong", { text: `Grimness Level: ${this.generateGrimness}` });
-        const grimnessDesc = grimnessLabel.createEl("span", {
-            cls: "setting-item-description"
-        });
-        this.updateGrimnessLabel(grimnessDesc);
-
-        const slider = form.createEl("input", {
-            type: "range",
-            cls: "background-grimness-slider"
-        });
-        slider.min = "0";
-        slider.max = "100";
-        slider.step = "5";
-        slider.value = String(this.generateGrimness);
-        slider.addEventListener("input", () => {
-            this.generateGrimness = parseInt(slider.value);
-            grimnessLabel.querySelector("strong")!.textContent = `Grimness Level: ${this.generateGrimness}`;
-            this.updateGrimnessLabel(grimnessDesc);
-        });
-
-        // Preview
-        if (this.generatedImageUrl) {
-            const preview = container.createDiv("background-preview");
-            preview.createEl("h3", { text: "Preview" });
-            const img = preview.createEl("img", { cls: "background-preview-image" });
-            img.src = this.generatedImageUrl;
-        }
-
-        // Action buttons
-        const actions = container.createDiv("background-modal-actions");
-
-        if (this.isGenerating) {
-            this.generateButton = null; // Clear reference when not showing button
-            const generating = actions.createEl("div", {
-                text: "Generating image...",
-                cls: "background-generating"
-            });
-        } else if (this.generatedImageUrl) {
-            this.generateButton = null; // Clear reference when not showing button
-            // Save button
-            const saveBtn = actions.createEl("button", {
-                text: "Save & Use",
-                cls: "mod-cta"
-            });
-            saveBtn.addEventListener("click", async () => {
-                await this.saveGeneratedBackground();
-            });
-
-            // Use once button (don't save)
-            const useOnceBtn = actions.createEl("button", {
-                text: "Use Once (Don't Save)"
-            });
-            useOnceBtn.addEventListener("click", () => {
-                // Use the URL directly without saving
-                this.onSelect(this.generatedImageUrl!);
-                this.close();
-            });
-        } else {
-            // Generate button
-            const generateBtn = actions.createEl("button", {
-                text: "Generate Image",
-                cls: "mod-cta"
-            });
-            generateBtn.disabled = !this.generateName || !this.plugin.data.openaiApiKey;
-            this.generateButton = generateBtn; // Store reference for later updates
-            if (!this.plugin.data.openaiApiKey) {
-                actions.createEl("p", {
-                    text: "Please configure OpenAI API key in settings first",
-                    cls: "background-error"
-                });
-            }
-            generateBtn.addEventListener("click", async () => {
-                await this.generateBackground();
-            });
-        }
-
-        const cancelBtn = actions.createEl("button", { text: "Cancel" });
-        cancelBtn.addEventListener("click", () => this.close());
+        const query = this.searchQuery.toLowerCase();
+        return this.backgrounds.filter(
+            (bg) =>
+                bg.name.toLowerCase().includes(query) ||
+                bg.userPrompt?.toLowerCase().includes(query) ||
+                bg.creatures?.some((c) => c.toLowerCase().includes(query))
+        );
     }
 
-    private updateGrimnessLabel(element: HTMLElement) {
-        if (this.generateGrimness <= 33) {
-            element.textContent = "(Bright & Hopeful)";
-        } else if (this.generateGrimness <= 66) {
-            element.textContent = "(Dramatic & Tense)";
-        } else {
-            element.textContent = "(Dark & Desperate)";
-        }
+    private async loadBackgrounds() {
+        this.backgrounds = await this.backgroundManager.listBackgrounds();
     }
 
     private async generateBackground() {
@@ -434,7 +272,9 @@ export class BackgroundModal extends Modal {
         }
 
         this.isGenerating = true;
-        this.refreshContent();
+        this.generatedImageUrl = undefined;
+        this.generatedName = undefined;
+        this.renderPreviewSection();
 
         try {
             const service = new OpenAIImageService(
@@ -442,19 +282,16 @@ export class BackgroundModal extends Modal {
                 requestUrl
             );
 
-            const visibleCreatures = this.creatures.filter(c => c.enabled && !c.hidden);
-
-            // Only pass creatures for "specific" backgrounds
-            // General backgrounds should be reusable without creature context
             const result = await service.generateImage({
-                creatures: this.generateType === "specific" ? visibleCreatures : [],
-                sceneDescription: this.generateDescription.trim() || undefined,
-                style: this.generateStyle,
-                grimness: this.generateGrimness
+                creatures: this.creatures,
+                userPrompt: this.userPrompt.trim() || undefined,
+                style: this.plugin.data.imageStyle || "fantasy-art",
+                grimness: this.plugin.data.imageGrimness ?? 50
             });
 
             if (result.success && result.imageUrl) {
                 this.generatedImageUrl = result.imageUrl;
+                this.generatedName = result.generatedName;
                 new Notice("Image generated successfully!");
             } else {
                 new Notice(`Failed to generate image: ${result.error}`);
@@ -466,28 +303,28 @@ export class BackgroundModal extends Modal {
             );
         } finally {
             this.isGenerating = false;
-            this.refreshContent();
+            this.renderPreviewSection();
         }
     }
 
     private async saveGeneratedBackground() {
-        if (!this.generatedImageUrl || !this.generateName) {
+        if (!this.generatedImageUrl || !this.generatedName) {
             return;
         }
 
         const creatureNames = this.creatures
-            .filter(c => c.enabled && !c.hidden && !c.player)
-            .map(c => c.name);
+            .filter((c) => c.enabled && !c.hidden && !c.player)
+            .map((c) => c.name);
 
         const metadata = await this.backgroundManager.downloadAndSaveImage(
             this.generatedImageUrl,
             {
-                name: this.generateName,
-                type: this.generateType,
-                description: this.generateDescription || undefined,
-                creatures: creatureNames.length > 0 ? creatureNames : undefined,
-                style: this.generateStyle,
-                grimness: this.generateGrimness
+                name: this.generatedName,
+                userPrompt: this.userPrompt.trim() || undefined,
+                creatures:
+                    creatureNames.length > 0 ? creatureNames : undefined,
+                style: this.plugin.data.imageStyle || "fantasy-art",
+                grimness: this.plugin.data.imageGrimness ?? 50
             }
         );
 

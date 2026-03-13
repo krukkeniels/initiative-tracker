@@ -6,6 +6,7 @@
     import Status from "./Status.svelte";
     import ConditionSelector from "./ConditionSelector.svelte";
     import HPPopup from "./HPPopup.svelte";
+    import HordeDisplay from "./HordeDisplay.svelte";
     import { Platform, setIcon, ExtraButtonComponent } from "obsidian";
     import { tracker } from "../../stores/tracker";
     import { createEventDispatcher, getContext } from "svelte";
@@ -18,7 +19,9 @@
 
     export let creature: Creature;
     $: statuses = creature.status;
-    $: creatureName = creature.player ? creature.name : creature.getName();
+    $: isHorde = creature.isHorde;
+    $: creatureName = creature.player ? creature.name : (isHorde ? creature.name : creature.getName());
+    $: hordeLabel = isHorde ? `[${creature.hordeSize}×]` : "";
 
     let showHPPopup = false;
     let hpButtonElement: HTMLElement;
@@ -171,6 +174,9 @@
         {#if creature.friendly}
             <div class="centered-icon" use:friendlyIcon />
         {/if}
+        {#if isHorde}
+            <span class="horde-badge">{hordeLabel}</span>
+        {/if}
         {#if creature.player}
             <strong class="name player">{creatureName}</strong>
         {:else}
@@ -204,28 +210,32 @@
     class="hp-container creature-adder"
     class:mobile={Platform.isMobile}
 >
-    <div
-        bind:this={hpButtonElement}
-        class="hp-content"
-        class:selected={showHPPopup}
-        on:click|stopPropagation={handleHPClick}
-    >
-        <div class="hp-icon" use:hpIconFn />
-        <div class="hp-display">
-            {@html creature.hpDisplay}
+    {#if isHorde}
+        <HordeDisplay {creature} />
+    {:else}
+        <div
+            bind:this={hpButtonElement}
+            class="hp-content"
+            class:selected={showHPPopup}
+            on:click|stopPropagation={handleHPClick}
+        >
+            <div class="hp-icon" use:hpIconFn />
+            <div class="hp-display">
+                {@html creature.hpDisplay}
+            </div>
         </div>
-    </div>
 
-    {#if showHPPopup}
-        <div class="hp-popup-overlay" on:click={handleOverlayClick}>
-            <HPPopup
-                currentHP={creature.hp}
-                maxHP={creature.max}
-                tempHP={creature.temp}
-                on:apply={handleHPApply}
-                on:cancel={handleHPCancel}
-            />
-        </div>
+        {#if showHPPopup}
+            <div class="hp-popup-overlay" on:click={handleOverlayClick}>
+                <HPPopup
+                    currentHP={creature.hp}
+                    maxHP={creature.max}
+                    tempHP={creature.temp}
+                    on:apply={handleHPApply}
+                    on:cancel={handleHPCancel}
+                />
+            </div>
+        {/if}
     {/if}
 </td>
 
@@ -349,5 +359,14 @@
         justify-content: center;
         z-index: 1000;
         background-color: rgba(0, 0, 0, 0.3);
+    }
+    .horde-badge {
+        font-weight: 600;
+        color: var(--text-accent);
+        background-color: var(--background-modifier-border);
+        padding: 0.1rem 0.3rem;
+        border-radius: 3px;
+        font-size: 0.85em;
+        flex-shrink: 0;
     }
 </style>

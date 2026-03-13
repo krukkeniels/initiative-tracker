@@ -13,6 +13,15 @@ export interface CreatureState extends HomebrewCreature {
     hit_dice: string;
     image?: string;
     image_url?: string;
+    image_hurt?: string;
+    image_bloodied?: string;
+    image_dead?: string;
+    // Horde properties
+    isHorde?: boolean;
+    hordeSize?: number;
+    remainingMinions?: number;
+    hpPerMinion?: number;
+    damageCarryover?: number;
 }
 export interface SRDMonster {
     name: string;
@@ -54,6 +63,15 @@ export interface HomebrewCreature {
     "statblock-link"?: string;
     image?: string;
     image_url?: string;
+    image_hurt?: string;
+    image_bloodied?: string;
+    image_dead?: string;
+    // Horde properties
+    isHorde?: boolean;
+    hordeSize?: number;
+    remainingMinions?: number;
+    hpPerMinion?: number;
+    damageCarryover?: number;
 }
 export type Condition = {
     name: string;

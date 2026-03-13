@@ -920,6 +920,15 @@ export default class InitiativeTracker extends Plugin {
             if ((updatedStatblock as any).image_url !== creature.image_url) {
                 updates.image_url = (updatedStatblock as any).image_url;
             }
+            if ((updatedStatblock as any).image_hurt !== creature.image_hurt) {
+                updates.image_hurt = (updatedStatblock as any).image_hurt;
+            }
+            if ((updatedStatblock as any).image_bloodied !== creature.image_bloodied) {
+                updates.image_bloodied = (updatedStatblock as any).image_bloodied;
+            }
+            if ((updatedStatblock as any).image_dead !== creature.image_dead) {
+                updates.image_dead = (updatedStatblock as any).image_dead;
+            }
 
             // Update base AC only if current AC hasn't been modified
             if (updatedStatblock.ac !== undefined && creature.ac === creature.current_ac) {

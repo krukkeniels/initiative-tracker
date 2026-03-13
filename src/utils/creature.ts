@@ -49,6 +49,15 @@ export class Creature {
     path: string;
     image: string;
     image_url: string;
+    image_hurt: string;
+    image_bloodied: string;
+    image_dead: string;
+    // Horde properties
+    isHorde: boolean = false;
+    hordeSize: number = 1;
+    remainingMinions: number = 1;
+    hpPerMinion: number = 0;
+    damageCarryover: number = 0;
     setModifier(modifier: number[] | number) {
         if (modifier) {
             if (Array.isArray(modifier)) {
@@ -143,6 +152,15 @@ export class Creature {
         if ("image_url" in creature) {
             this.image_url = (creature as any).image_url;
         }
+        if ("image_hurt" in creature) {
+            this.image_hurt = (creature as any).image_hurt;
+        }
+        if ("image_bloodied" in creature) {
+            this.image_bloodied = (creature as any).image_bloodied;
+        }
+        if ("image_dead" in creature) {
+            this.image_dead = (creature as any).image_dead;
+        }
 
         if ("statblock-link" in creature) {
             this["statblock-link"] = (creature as any)[
@@ -151,6 +169,23 @@ export class Creature {
         }
         if ("hit_dice" in creature && typeof creature.hit_dice == "string") {
             this.hit_dice = creature.hit_dice;
+        }
+
+        // Initialize horde properties
+        if ("isHorde" in creature) {
+            this.isHorde = (creature as any).isHorde ?? false;
+        }
+        if ("hordeSize" in creature) {
+            this.hordeSize = (creature as any).hordeSize ?? 1;
+        }
+        if ("remainingMinions" in creature) {
+            this.remainingMinions = (creature as any).remainingMinions ?? this.hordeSize;
+        }
+        if ("hpPerMinion" in creature) {
+            this.hpPerMinion = (creature as any).hpPerMinion ?? 0;
+        }
+        if ("damageCarryover" in creature) {
+            this.damageCarryover = (creature as any).damageCarryover ?? 0;
         }
     }
     get hpDisplay() {
@@ -326,6 +361,15 @@ export class Creature {
         if ("image_url" in creature) {
             this.image_url = (creature as any).image_url;
         }
+        if ("image_hurt" in creature) {
+            this.image_hurt = (creature as any).image_hurt;
+        }
+        if ("image_bloodied" in creature) {
+            this.image_bloodied = (creature as any).image_bloodied;
+        }
+        if ("image_dead" in creature) {
+            this.image_dead = (creature as any).image_dead;
+        }
 
         // Allow direct updates of combat-related properties (for internal use)
         if ("current_max" in creature && (creature as any).current_max !== undefined) {
@@ -370,7 +414,16 @@ export class Creature {
             hit_dice: this.hit_dice,
             rollHP: this.rollHP,
             image: this.image,
-            image_url: this.image_url
+            image_url: this.image_url,
+            image_hurt: this.image_hurt,
+            image_bloodied: this.image_bloodied,
+            image_dead: this.image_dead,
+            // Horde properties
+            isHorde: this.isHorde,
+            hordeSize: this.hordeSize,
+            remainingMinions: this.remainingMinions,
+            hpPerMinion: this.hpPerMinion,
+            damageCarryover: this.damageCarryover
         };
     }
 
@@ -412,6 +465,32 @@ export class Creature {
         }
         if (state.image_url) {
             creature.image_url = state.image_url;
+        }
+        if (state.image_hurt) {
+            creature.image_hurt = state.image_hurt;
+        }
+        if (state.image_bloodied) {
+            creature.image_bloodied = state.image_bloodied;
+        }
+        if (state.image_dead) {
+            creature.image_dead = state.image_dead;
+        }
+
+        // Restore horde properties from saved state
+        if ("isHorde" in state) {
+            creature.isHorde = (state as any).isHorde ?? false;
+        }
+        if ("hordeSize" in state) {
+            creature.hordeSize = (state as any).hordeSize ?? 1;
+        }
+        if ("remainingMinions" in state) {
+            creature.remainingMinions = (state as any).remainingMinions ?? creature.hordeSize;
+        }
+        if ("hpPerMinion" in state) {
+            creature.hpPerMinion = (state as any).hpPerMinion ?? 0;
+        }
+        if ("damageCarryover" in state) {
+            creature.damageCarryover = (state as any).damageCarryover ?? 0;
         }
 
         return creature;

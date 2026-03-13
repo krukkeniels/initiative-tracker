@@ -248,7 +248,9 @@ export class EncounterParser {
             xp: number,
             hidden: boolean = false,
             friendly: boolean = false,
-            rollHP: boolean = globalRollHP;
+            rollHP: boolean = globalRollHP,
+            isHorde: boolean = false,
+            hpPerMinion: number = 0;
 
         if (typeof monster == "string") {
             if (monster.match(/,\s+hidden/)) {
@@ -263,6 +265,10 @@ export class EncounterParser {
                 monster = monster
                     .replace(/,\s*friend(?:ly)?/, "")
                     .replace(/,\s*ally/, "");
+            }
+            if (monster.match(/,\s+horde/)) {
+                isHorde = true;
+                monster = monster.replace(/,\s*horde/, "");
             }
             name = monster.split(/,\s?/)[0];
             [hp, ac, mod, xp] = monster
@@ -289,6 +295,8 @@ export class EncounterParser {
                         (v) => v == "friend" || v == "friendly" || v == "ally"
                     ) != undefined;
 
+            isHorde = monster.slice(1).find((v) => v == "horde") != undefined;
+
             [hp, ac, mod, xp] = monster
                 .slice(1)
                 .filter(
@@ -296,13 +304,15 @@ export class EncounterParser {
                         v != "hidden" &&
                         v != "friend" &&
                         v != "friendly" &&
-                        v != "ally"
+                        v != "ally" &&
+                        v != "horde"
                 )
                 .map((v) => (isNaN(Number(v)) ? null : Number(v)));
         } else if (typeof monster == "object") {
             ({ creature: name, name: display, hp, ac, mod, xp } = monster);
             hidden = monster.hidden || false;
             friendly = monster.friend || monster.ally || false;
+            isHorde = monster.horde || false;
         }
 
         if (hp) {
@@ -322,6 +332,36 @@ export class EncounterParser {
         creature.hidden = hidden ?? creature.hidden;
         creature.friendly = friendly ?? creature.friendly;
         creature.rollHP = rollHP ?? globalRollHP ?? creature.rollHP;
+
+        // Handle horde setup
+        if (isHorde && typeof number === "number" && number > 1) {
+            creature.isHorde = true;
+            creature.hordeSize = number;
+            creature.remainingMinions = number;
+
+            // If explicit HP was provided, use it as HP per minion
+            // Otherwise use the creature's default HP from statblock
+            if (hp) {
+                hpPerMinion = hp;
+            } else {
+                // Use creature's HP from statblock as HP per minion
+                hpPerMinion = creature.hp;
+            }
+
+            // Round HP per minion to nearest 5 for easier tracking (optional)
+            const roundHordeHP = this.plugin.data.roundHordeHP ?? 5;
+            if (roundHordeHP > 1) {
+                hpPerMinion = Math.round(hpPerMinion / roundHordeHP) * roundHordeHP;
+            }
+
+            creature.hpPerMinion = hpPerMinion;
+            creature.damageCarryover = 0;
+
+            // Set total HP pool
+            creature.hp = hpPerMinion * number;
+            creature.max = creature.hp;
+            creature.current_max = creature.hp;
+        }
 
         return { creature, number };
     }

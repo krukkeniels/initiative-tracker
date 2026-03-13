@@ -49,6 +49,8 @@ type CreatureUpdate = {
     set_max_hp?: number;
     image?: string;
     image_url?: string;
+    // Horde minion removal
+    remove_minion?: number;
 };
 type CreatureUpdates = { creature: Creature; change: CreatureUpdate };
 const modifier = Platform.isMacOS ? "Meta" : "Control";
@@ -211,40 +213,77 @@ function createTracker() {
                     creature.temp = Math.max(0, remaining);
                     change.hp = Math.min(0, remaining);
                 }
-                // Clamp HP at 0 if clamp is enabled in settings
-                if (_settings?.clamp && creature.hp + change.hp < 0) {
-                    change.hp = -creature.hp;
-                }
-                // Handle overflow healing according to settings
-                if (
-                    change.hp > 0 &&
-                    change.hp + creature.hp > creature.current_max &&
-                    _settings
-                ) {
-                    switch (_settings.hpOverflow) {
-                        case OVERFLOW_TYPE.ignore:
-                            change.hp = Math.max(
-                                creature.current_max - creature.hp,
-                                0
-                            );
-                            break;
-                        case OVERFLOW_TYPE.temp:
-                            // Gives temp a value, such that it will be set later
-                            change.temp =
-                                change.hp -
-                                Math.min(creature.current_max - creature.hp, 0);
-                            change.hp -= change.temp;
-                            break;
-                        case OVERFLOW_TYPE.current:
-                            break;
+
+                // Handle horde HP tracking differently
+                if (creature.isHorde && creature.hpPerMinion > 0) {
+                    if (change.hp < 0) {
+                        // Taking damage - add to carry-over and kill minions when threshold reached
+                        creature.damageCarryover += Math.abs(change.hp);
+
+                        while (creature.damageCarryover >= creature.hpPerMinion && creature.remainingMinions > 0) {
+                            creature.remainingMinions--;
+                            creature.damageCarryover -= creature.hpPerMinion;
+                        }
+
+                        // Update HP pool to reflect remaining minions
+                        creature.hp = Math.max(0, creature.remainingMinions * creature.hpPerMinion - creature.damageCarryover);
+                        creature.current_max = creature.remainingMinions * creature.hpPerMinion;
+
+                        // If all minions dead, disable the creature
+                        if (creature.remainingMinions <= 0) {
+                            creature.enabled = false;
+                            if (_settings?.autoStatus) {
+                                const unc = _settings.statuses.find(
+                                    (s) => s.id == _settings.unconsciousId
+                                );
+                                if (unc) creature.addCondition(unc);
+                            }
+                        }
+                    } else if (change.hp > 0) {
+                        // Healing - distribute across remaining minions
+                        creature.damageCarryover = Math.max(0, creature.damageCarryover - change.hp);
+                        creature.hp = creature.remainingMinions * creature.hpPerMinion - creature.damageCarryover;
+
+                        // Optionally revive minions if healing exceeds current pool max
+                        // (not implemented by default - would require special handling)
                     }
-                }
-                creature.hp += change.hp;
-                if (_settings?.autoStatus && creature.hp <= 0) {
-                    const unc = _settings.statuses.find(
-                        (s) => s.id == _settings.unconsciousId
-                    );
-                    if (unc) creature.addCondition(unc);
+                } else {
+                    // Standard HP tracking for non-horde creatures
+                    // Clamp HP at 0 if clamp is enabled in settings
+                    if (_settings?.clamp && creature.hp + change.hp < 0) {
+                        change.hp = -creature.hp;
+                    }
+                    // Handle overflow healing according to settings
+                    if (
+                        change.hp > 0 &&
+                        change.hp + creature.hp > creature.current_max &&
+                        _settings
+                    ) {
+                        switch (_settings.hpOverflow) {
+                            case OVERFLOW_TYPE.ignore:
+                                change.hp = Math.max(
+                                    creature.current_max - creature.hp,
+                                    0
+                                );
+                                break;
+                            case OVERFLOW_TYPE.temp:
+                                // Gives temp a value, such that it will be set later
+                                change.temp =
+                                    change.hp -
+                                    Math.min(creature.current_max - creature.hp, 0);
+                                change.hp -= change.temp;
+                                break;
+                            case OVERFLOW_TYPE.current:
+                                break;
+                        }
+                    }
+                    creature.hp += change.hp;
+                    if (_settings?.autoStatus && creature.hp <= 0) {
+                        const unc = _settings.statuses.find(
+                            (s) => s.id == _settings.unconsciousId
+                        );
+                        if (unc) creature.addCondition(unc);
+                    }
                 }
             }
             if (change.max) {
@@ -316,6 +355,25 @@ function createTracker() {
             }
             if ("image_url" in change) {
                 creature.image_url = change.image_url!;
+            }
+            if (change.remove_minion && creature.isHorde) {
+                // Manually remove minions without HP change
+                creature.remainingMinions = Math.max(0, creature.remainingMinions - change.remove_minion);
+
+                // Update HP pool and max to reflect remaining minions
+                creature.current_max = creature.remainingMinions * creature.hpPerMinion;
+                creature.hp = creature.remainingMinions * creature.hpPerMinion - creature.damageCarryover;
+
+                // If all minions dead, disable the creature
+                if (creature.remainingMinions <= 0) {
+                    creature.enabled = false;
+                    if (_settings?.autoStatus) {
+                        const unc = _settings.statuses.find(
+                            (s) => s.id == _settings.unconsciousId
+                        );
+                        if (unc) creature.addCondition(unc);
+                    }
+                }
             }
             if (!creatures.some(c => c.id === creature.id)) {
                 creatures.push(creature);

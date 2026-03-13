@@ -114,28 +114,6 @@ export class BackgroundManager {
     }
 
     /**
-     * Get backgrounds filtered by type
-     */
-    async getBackgroundsByType(type: "general" | "specific"): Promise<BackgroundMetadata[]> {
-        const all = await this.listBackgrounds();
-        return all.filter(bg => bg.type === type);
-    }
-
-    /**
-     * Search backgrounds by name or description
-     */
-    async searchBackgrounds(query: string): Promise<BackgroundMetadata[]> {
-        const all = await this.listBackgrounds();
-        const lowerQuery = query.toLowerCase();
-        return all.filter(
-            bg =>
-                bg.name.toLowerCase().includes(lowerQuery) ||
-                bg.description?.toLowerCase().includes(lowerQuery) ||
-                bg.creatures?.some(c => c.toLowerCase().includes(lowerQuery))
-        );
-    }
-
-    /**
      * Delete a background image and its metadata
      */
     async deleteBackground(metadata: BackgroundMetadata): Promise<boolean> {

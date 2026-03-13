@@ -72,6 +72,18 @@
         }
     };
 
+    // Get horde status for player view display
+    const getHordeStatus = (creature: Creature) => {
+        const percentAlive = creature.hordeSize > 0 ? (creature.remainingMinions / creature.hordeSize) * 100 : 0;
+        return {
+            remaining: creature.remainingMinions,
+            total: creature.hordeSize,
+            percentAlive,
+            statusText: percentAlive === 100 ? "Healthy" : percentAlive >= 50 ? "Hurt" : percentAlive > 0 ? "Bloodied" : "Defeated",
+            color: percentAlive === 100 ? "#10b981" : percentAlive >= 50 ? "#f59e0b" : percentAlive > 0 ? "#dc2626" : "#6b7280"
+        };
+    };
+
     const heartIcon = (node: HTMLElement) => {
         setIcon(node, "heart");
     };
@@ -227,6 +239,24 @@
         }
     };
 
+    // Select the appropriate image based on creature HP status
+    const getCreatureImage = (creature: Creature): string | undefined => {
+        const { hp, max } = creature;
+        let imagePath: string | undefined;
+
+        if (hp <= 0) {
+            imagePath = creature.image_dead || creature.image_bloodied;
+        } else if (hp < max) {
+            imagePath = creature.image_hurt;
+        }
+
+        if (!imagePath) {
+            imagePath = creature.image || creature.image_url;
+        }
+
+        return getImageUrl(imagePath);
+    };
+
 </script>
 
 <div class="player-view-container" transition:fade>
@@ -249,7 +279,7 @@
         <!-- Active Creature Card -->
         {#if activeCreature}
             {@const creature = activeCreature}
-            {@const imageUrl = getImageUrl(creature.image || creature.image_url)}
+            {@const imageUrl = getCreatureImage(creature)}
             <div
                 class="detail-card active-card creature-type-{getCreatureType(creature)}"
                 data-creature-id={creature.id}
@@ -268,18 +298,30 @@
                 {/if}
 
                 <!-- Health Badge (Top-right corner) -->
-                <div class="health-badge {getHpStatus(creature.hp, creature.max).toLowerCase()}">
-                    {#if creature.player && $data.diplayPlayerHPValues}
-                        <div class="hp-text">{@html creature.hpDisplay}</div>
-                    {:else}
-                        {@const heartStates = getHeartStates(creature)}
-                        <div class="health-icons multi-hearts">
-                            {#each heartStates as heartState}
-                                <span class="heart-icon">{@html getHpIconSvg(heartState)}</span>
-                            {/each}
-                        </div>
-                    {/if}
-                </div>
+                {#if creature.isHorde}
+                    {@const hordeStatus = getHordeStatus(creature)}
+                    <div class="health-badge {hordeStatus.statusText.toLowerCase()} horde-health-badge">
+                        {#if creature.hordeSize > 0}
+                            <div class="horde-badge-multiplier">[×{creature.hordeSize}]</div>
+                            <div class="horde-badge-count" style="color: {hordeStatus.color}">
+                                {hordeStatus.remaining} of {hordeStatus.total} alive
+                            </div>
+                        {/if}
+                    </div>
+                {:else}
+                    <div class="health-badge {getHpStatus(creature.hp, creature.max).toLowerCase()}">
+                        {#if creature.player && $data.diplayPlayerHPValues}
+                            <div class="hp-text">{@html creature.hpDisplay}</div>
+                        {:else}
+                            {@const heartStates = getHeartStates(creature)}
+                            <div class="health-icons multi-hearts">
+                                {#each heartStates as heartState}
+                                    <span class="heart-icon">{@html getHpIconSvg(heartState)}</span>
+                                {/each}
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
 
                 <!-- Image Container -->
                 <div class="image-container">
@@ -326,7 +368,13 @@
 
                     <!-- Name Banner (overlays bottom of image) -->
                     <div class="name-banner creature-type-{getCreatureType(creature)}">
-                        <div class="creature-name">{name(creature)}</div>
+                        <div class="creature-name">
+                            {#if creature.isHorde}
+                                {name(creature)} HORDE
+                            {:else}
+                                {name(creature)}
+                            {/if}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -336,7 +384,7 @@
     <!-- RIGHT PANE: Initiative Sidebar -->
     <div class="initiative-sidebar">
         {#each activeAndVisible as creature (creature.id)}
-            {@const imageUrl = getImageUrl(creature.image || creature.image_url)}
+            {@const imageUrl = getCreatureImage(creature)}
             <div
                 class="initiative-item creature-type-{getCreatureType(creature)}"
                 class:active={amIActive(creature) && $state}
@@ -364,7 +412,15 @@
                     <span class="init-badge" class:active-badge={amIActive(creature) && $state}>{creature.initiative}</span>
                 </div>
 
-                <span class="init-name">{name(creature)}</span>
+                <span class="init-name">
+                    {#if creature.isHorde}
+                        <span class="sidebar-horde-badge">[{creature.hordeSize}×]</span>
+                    {/if}
+                    {name(creature)}
+                    {#if creature.isHorde}
+                        <span class="horde-label">Horde</span>
+                    {/if}
+                </span>
 
                 <!-- Condition Icons -->
                 {#if creature.status.size > 0}
@@ -391,7 +447,14 @@
                 {/if}
 
                 <!-- Health Icons (Rightmost column with divider) -->
-                {#if creature.player && $data.diplayPlayerHPValues}
+                {#if creature.isHorde}
+                    {@const hordeStatus = getHordeStatus(creature)}
+                    <div class="sidebar-health horde-sidebar-health {hordeStatus.statusText.toLowerCase()}">
+                        <span class="sidebar-horde-count" style="color: {hordeStatus.color}">
+                            {hordeStatus.remaining} of {hordeStatus.total}
+                        </span>
+                    </div>
+                {:else if creature.player && $data.diplayPlayerHPValues}
                     <div class="sidebar-health {getHpStatus(creature.hp, creature.max).toLowerCase()}">
                         <span class="sidebar-hp-text">{@html creature.hpDisplay}</span>
                     </div>
@@ -1274,5 +1337,61 @@
             rgba(0, 0, 0, 0.3) 50%,
             rgba(0, 0, 0, 0.4) 100%
         );
+    }
+
+    /* === HORDE-SPECIFIC STYLES === */
+
+    /* Active Card Horde Badge */
+    .horde-health-badge {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        align-items: center;
+    }
+
+    .horde-badge-multiplier {
+        font-size: 1.1em;
+        font-weight: 700;
+        padding: 4px 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 6px;
+        color: rgba(255, 255, 255, 0.95);
+    }
+
+    .horde-badge-count {
+        font-size: 0.9em;
+        font-weight: 600;
+        text-align: center;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Sidebar Horde Display */
+    .sidebar-horde-badge {
+        font-weight: 700;
+        padding: 2px 4px;
+        border-radius: 3px;
+        background: rgba(0, 0, 0, 0.2);
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 0.85em;
+        margin-right: 4px;
+    }
+
+    .horde-label {
+        font-style: italic;
+        font-size: 0.85em;
+        margin-left: 4px;
+        color: rgba(255, 255, 255, 0.75);
+    }
+
+    .horde-sidebar-health {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .sidebar-horde-count {
+        font-size: 0.8em;
+        font-weight: 600;
+        text-align: center;
     }
 </style>

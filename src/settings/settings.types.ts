@@ -49,6 +49,9 @@ export interface InitiativeTrackerData {
 
     rollPlayerInitiatives: RollPlayerInitiativeBehavior;
 
+    // Horde Combat
+    roundHordeHP?: 1 | 5 | 10;
+
     // OpenAI Image Generation
     openaiApiKey: string;
     imageStyle: string;
@@ -73,8 +76,7 @@ export interface Party {
 
 export interface BackgroundMetadata {
     name: string;
-    type: "general" | "specific";
-    description?: string;
+    userPrompt?: string;
     creatures?: string[];
     style: string;
     grimness: number;
